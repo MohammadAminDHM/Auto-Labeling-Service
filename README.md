@@ -1,8 +1,7 @@
 # Auto Labeling Service (Rex-Omni)
 Here’s a fully **professional, complete README** for your Rex-Omni Auto-Labeling project, merging all previous content, adding workflow explanations, and including a visual workflow diagram.
 
-![Project Banner](https://github.com/alirzx/MotorImagary-Classification-using-Hybrid-SNN-and-Advance-method/blob/main/bciiv2a.png?raw=true)
-
+![Project Banner](https://github.com/alirzx/Auto-Labeling-Service-Based-on-RexOmni-Arcitecture-/blob/main/cafe_visualize.jpg?raw=true)
 ---
 
 # Rex-Omni Auto-Labeling Service
@@ -206,6 +205,8 @@ Rex-Omni Auto-Labeling Service is a **robust, production-ready pipeline** for au
 * Structured **JSON outputs**
 * Annotated **visualizations**
 * Multi-task support for **object detection, keypoints, OCR, and visual prompting**
+
+![Project Banner](https://github.com/alirzx/Auto-Labeling-Service-Based-on-RexOmni-Arcitecture-/blob/main/cafe_visualize.jpg?raw=true)
 
 Ideal for **research, dataset preparation, and production-grade AI pipelines**.
 
