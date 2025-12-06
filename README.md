@@ -1,7 +1,7 @@
 # Auto Labeling Service (Rex-Omni)
 Here’s a fully **professional, complete README** for your Rex-Omni Auto-Labeling project, merging all previous content, adding workflow explanations, and including a visual workflow diagram.
 
-![Project Banner](https://github.com/alirzx/Auto-Labeling-Service-Based-on-RexOmni-Arcitecture-/blob/main/cafe_visualize.jpg?raw=true)
+![Project Banner](https://github.com/alirzx/Auto-Labeling-Service-Based-on-RexOmni-Arcitecture-/blob/main/rexomni_pic.png?raw=true)
 ---
 
 # Rex-Omni Auto-Labeling Service
