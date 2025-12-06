@@ -211,5 +211,3 @@ Rex-Omni Auto-Labeling Service is a **robust, production-ready pipeline** for au
 Ideal for **research, dataset preparation, and production-grade AI pipelines**.
 
 ---
-
-Do you want me to create that image version?
