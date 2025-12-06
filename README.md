@@ -1,6 +1,8 @@
 # Auto Labeling Service (Rex-Omni)
 Here’s a fully **professional, complete README** for your Rex-Omni Auto-Labeling project, merging all previous content, adding workflow explanations, and including a visual workflow diagram.
 
+![Project Banner](https://github.com/alirzx/MotorImagary-Classification-using-Hybrid-SNN-and-Advance-method/blob/main/bciiv2a.png?raw=true)
+
 ---
 
 # Rex-Omni Auto-Labeling Service
