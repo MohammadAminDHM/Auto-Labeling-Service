@@ -15,6 +15,8 @@ random.seed(0)
 np.random.seed(0)
 
 API_URL = "http://localhost:6996/detection"
+# Optional: target a specific registered model (see /health/models)
+MODEL_NAME = os.getenv("MODEL_NAME", "rex-omni")
 
 OUTPUT_DIR = r"D:\hami_system_sharif\rex-omni\auto_labeling_results"
 DATASET_DIR = r"D:\hami_system_sharif\rex-omni\Dataset\object_detection"
@@ -28,7 +30,7 @@ def process_image(image_path, category_name, image_id, class_json):
     # send request
     with open(image_path, "rb") as f:
         files = {"file": f}
-        data = [("categories", category_name)]
+        data = [("categories", category_name), ("model_name", MODEL_NAME)]
         response = requests.post(API_URL, files=files, data=data)
 
     if response.status_code != 200:

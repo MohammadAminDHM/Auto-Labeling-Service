@@ -1,17 +1,24 @@
-import os
-from huggingface_hub import snapshot_download
-from rex_omni import RexOmniWrapper
-from PIL import Image, ImageDraw, ImageFont
 import io
-from typing import List, Optional, Dict, Any
+import os
+from typing import Dict, List, Optional
 
-class RexOmniService:
+from huggingface_hub import snapshot_download
+from PIL import Image, ImageDraw, ImageFont
+from rex_omni import RexOmniWrapper
+
+from inference.base import LabelingService
+
+class RexOmniService(LabelingService):
     def __init__(
         self,
         model_path: str = "IDEA-Research/Rex-Omni",
         use_awq: bool = False,
         cache_dir: Optional[str] = None
     ):
+        self.name = "rex-omni"
+        self.description = "Generalist Rex-Omni multimodal vision model"
+        self.capabilities = {"detection", "visual_prompting", "keypoint", "ocr"}
+
         if not cache_dir:
             cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
         self.cache_dir = cache_dir
@@ -41,6 +48,7 @@ class RexOmniService:
             kwargs["quantization"] = "awq"
 
         self.model = RexOmniWrapper(**kwargs)
+        self.output_dir = os.getcwd()
 
     # ------------------- INFERENCE -------------------
 
