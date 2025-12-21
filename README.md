@@ -1,31 +1,33 @@
+
 # Auto Labeling Service (Rex-Omni)
-Here’s a fully **professional, complete README** for your Rex-Omni Auto-Labeling project, merging all previous content, adding workflow explanations, and including a visual workflow diagram.
 
 ![Project Banner](https://github.com/alirzx/Auto-Labeling-Service-Based-on-RexOmni-Arcitecture-/blob/main/rexomni_pic.png?raw=true)
+
 ---
 
 # Rex-Omni Auto-Labeling Service
 
-A **structured FastAPI service** wrapping the **Rex-Omni multimodal model** to provide automated image labeling for various computer vision tasks. It supports:
+A **modular FastAPI service** wrapping the **Rex-Omni multimodal model**, designed for **automated dataset labeling** across multiple computer vision tasks:
 
-* **Object Detection**
-* **Visual Prompting**
+* **Object Detection** (generic objects, person, face, etc.)
+* **Visual Prompting** for guided detection
 * **Keypoint Estimation** (human pose, hand, face, animal)
-* **OCR** (Optical Character Recognition)
+* **OCR** (text detection and recognition)
+* **Action & Posture Recognition** (HAR)
 
-The service streams **visualized images**, returns structured **JSON outputs**, and is ideal for **dataset bootstrapping, interactive demos, and large-scale labeling pipelines**.
+The service returns **annotated images** and **structured JSON**, suitable for **dataset bootstrapping, batch labeling pipelines, and interactive demos**.
 
 ---
 
 ## Features
 
-* 🚀 **FastAPI application** with modular endpoints and interactive OpenAPI docs.
+* 🚀 **FastAPI app** with modular endpoints and interactive OpenAPI docs.
 * 🖼️ **Detection endpoint** streams annotated JPEGs and returns detection metadata in headers (`X-Rex-Detections`).
-* 🔍 **Visual Prompting**: guide the model with user-defined bounding boxes for precise detections.
+* 🔍 **Visual Prompting**: accept bounding boxes to guide detection.
 * 🧍 **Keypoint Detection**: supports human pose, hand, face, and animal landmarks.
 * 📝 **OCR Support**: configurable output format (Box/Text) and granularity (Word/Line level).
-* ✅ **Health Endpoint**: lightweight readiness and uptime check.
-* 📂 **Auto-Labeling Scripts**: batch process datasets, generate per-class JSON annotations, and visualizations.
+* 🛠️ **Robust Auto-Labeling Scripts**: batch process datasets, generate per-class JSON annotations and visualizations, handle retries and API failures.
+* ✅ **Health Endpoint** for readiness and uptime checking.
 
 ---
 
@@ -49,7 +51,6 @@ The service streams **visualized images**, returns structured **JSON outputs**, 
 ┌───────────────┐           ┌───────────────┐
 │ JSON Outputs  │           │ Annotated     │
 │ per category  │           │ Images w/ BBox│
-│               │           │ Visualization │
 └───────────────┘           └───────────────┘
       │                           │
       └───────────────┬───────────┘
@@ -66,11 +67,11 @@ The service streams **visualized images**, returns structured **JSON outputs**, 
 
 ### 1. Install Dependencies
 
-Ensure Python 3.10+ is installed. GPU/accelerator drivers recommended for batch processing.
-
 ```bash
 pip install -r requirements.txt
 ```
+
+GPU/accelerator drivers are recommended for **large batch processing**.
 
 ---
 
@@ -80,13 +81,13 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 6996 --reload
 ```
 
-Open [http://localhost:6996/docs](http://localhost:6996/docs) for **interactive documentation**.
+Access [http://localhost:6996/docs](http://localhost:6996/docs) for **interactive documentation**.
 
 ---
 
 ## API Overview
 
-| Task             | Endpoint            | Method | Notes                                                                                 |
+| Task             | Endpoint            | Method | Description                                                                           |
 | ---------------- | ------------------- | ------ | ------------------------------------------------------------------------------------- |
 | Health check     | `/health`           | GET    | Lightweight uptime probe                                                              |
 | Detection        | `/detection`        | POST   | Multipart image upload; returns annotated JPEG stream + detection metadata in headers |
@@ -105,35 +106,47 @@ curl -X POST "http://localhost:6996/detection" \
   -o annotated.jpg -D headers.txt
 ```
 
-* `annotated.jpg`: visualized bounding boxes
-* `headers.txt`: detection metadata in `X-Rex-Detections` header
+* `annotated.jpg` → visualized bounding boxes
+* `headers.txt` → detection metadata in `X-Rex-Detections` header
 
 ---
 
-## Auto-Labeling Script
+## Auto-Labeling Scripts
 
-The **auto-labeling scripts** allow **batch processing of datasets**:
+The service provides **robust scripts** for batch labeling:
 
-1. Iterate through **category folders**.
-2. Send images to the **detection API**.
-3. Receive JSON annotations and optional visualizations.
-4. Save **per-class JSON** and **annotated images** in a structured directory.
+* **Face Detection**: `face_auto_label.py`
+* **Object Detection**: `object_auto_label.py`
+* **Posture & Action Recognition**: `posture_auto_label_robust_fixed_v2.py`
+* **Action Recognition Testing & Evaluation**: `PD_test.py`
 
-### Setup
+### Features:
 
-Update the following in `app/auto_label.py`:
+* Skip **already processed categories** (resume after crashes)
+* Save **per-class JSON annotations** and **visualized images**
+* Handle **API failures**, retries, and logging
+* Supports **keypoints for persons** and robust mapping to full images
+* Tracks **bbox, confidence, area**, and **per-instance keypoints**
+
+---
+
+### Example Usage
+
+Update script paths:
 
 ```python
 API_URL = "http://localhost:6996/detection"
-OUTPUT_DIR = "/path/to/auto_labeling_results"
-DATASET_DIR = "/path/to/dataset"
+OUTPUT_DIR = "/mnt/models/binatest/dataset_bina/auto_labeling_results"
+DATASET_DIR = "/mnt/models/binatest/dataset_bina/Face detection/FaceDataset"
 ```
 
-### Run
+Run the script:
 
 ```bash
-python app/auto_label.py
+python face_auto_label.py
 ```
+
+---
 
 ### Output Structure
 
@@ -152,10 +165,29 @@ auto_labeling_results/
 
 ```json
 {
-  "category": "male",
+  "class": "male",
   "images": [{"id": 1, "file_name": "/path/to/image.jpg"}],
   "annotations": [
     {"image_id": 1, "bbox": [x0, y0, x1, y1], "confidence": 0.95, "area": 1234}
+  ]
+}
+```
+
+For **posture/action recognition**, JSON includes:
+
+```json
+{
+  "action": "running",
+  "images": [{"id": 1, "file_name": "..."}],
+  "annotations": [
+    {
+      "image_id": 1,
+      "bbox": [x0, y0, x1, y1],
+      "persons": [{"instance_id": 1, "keypoints": {"nose": [x,y], ...}}],
+      "label": "person",
+      "score": 0.98,
+      "area": 4321
+    }
   ]
 }
 ```
@@ -164,15 +196,30 @@ auto_labeling_results/
 
 ## Development Notes
 
-* **Routers** are in `app/routers/` and share a **cached RexOmniService instance** from `app/dependencies.py` to avoid repeated model loads.
-* Update **model settings** (AWQ quantization, cache directory, temperature) via `RexOmniService`.
-* The FastAPI entry point is `app/main.py`. Local execution supported with:
+* **Routers** in `app/routers/` share a **cached RexOmniService instance**.
+* Configure **model parameters**: AWQ quantization, cache dir, temperature, device.
+* **FastAPI entry point**: `app/main.py`. Can run locally with:
 
 ```bash
 python app/main.py
 ```
 
-* Handles **errors gracefully**, skips corrupted images, and continues processing.
+* Logs errors, skips **corrupt images**, and continues automatically.
+
+---
+
+## Posture/Action Recognition Test & Evaluation
+
+* `PD_test.py` performs **HAR model evaluation** on test datasets.
+* Computes: **accuracy, precision, recall, F1 per class**, confusion matrices, and top prediction probabilities.
+* Generates plots:
+
+  * Confusion Matrix
+  * Precision/Recall/F1 per class
+  * Prediction probability histogram
+  * True vs predicted scatter
+
+![Evaluation Example](https://github.com/alirzx/Auto-Labeling-Service-Based-on-RexOmni-Arcitecture-/blob/main/cafe_visualize.jpg?raw=true)
 
 ---
 
@@ -181,33 +228,33 @@ python app/main.py
 * Python 3.10+
 * FastAPI, uvicorn
 * Pillow, requests, numpy, tqdm
-* Rex-Omni model package
 * Huggingface Hub
+* Rex-Omni model package
 
-**Recommended:** GPU for faster batch processing, especially with large datasets.
+**Recommended:** GPU for faster batch processing on large datasets.
 
 ---
 
 ## Best Practices
 
-1. Organize datasets in **per-category folders**.
-2. Remove hidden/system files (e.g., macOS `._*` files).
-3. Inspect sample visualizations to validate **detection quality**.
-4. Use smaller images if **GPU memory is limited**.
-5. Cache the model locally to **avoid repeated downloads**.
+1. Organize datasets into **per-class folders**
+2. Remove hidden/system files (`._*`)
+3. Inspect visualizations to validate detection quality
+4. Use smaller images if **GPU memory is limited**
+5. Cache models locally to **avoid repeated downloads**
+6. Resume labeling after API failures using **skip logic** in scripts
 
 ---
 
 ## Summary
 
-Rex-Omni Auto-Labeling Service is a **robust, production-ready pipeline** for automated labeling of vision datasets. It provides:
+Rex-Omni Auto-Labeling Service is a **production-ready pipeline** for automated computer vision labeling:
 
-* Structured **JSON outputs**
-* Annotated **visualizations**
-* Multi-task support for **object detection, keypoints, OCR, and visual prompting**
+* ✅ Structured **JSON outputs**
+* 🖼️ Annotated **visualizations**
+* 🤖 Multi-task support for **object detection, keypoints, OCR, and visual prompting**
+* 📈 Robust **batch processing with resume and retry logic**
 
-![Project Banner](https://github.com/alirzx/Auto-Labeling-Service-Based-on-RexOmni-Arcitecture-/blob/main/cafe_visualize.jpg?raw=true)
-
-Ideal for **research, dataset preparation, and production-grade AI pipelines**.
+Ideal for **research, dataset preparation, and production AI pipelines**.
 
 ---
