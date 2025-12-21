@@ -1,57 +1,30 @@
-"""FastAPI application entrypoint for Rex-Omni & Florence multi-task inference."""
-
 from fastapi import FastAPI
 
-from app.routers import (
-    detection,
-    ocr,
-    keypoint,
-    visual_prompting,
-    vision,
-    health,
-)
+from app.routers.rexomni_endpoints import router as rexomni_router
+from app.routers.florence_endpoints import router as florence_router
+#from app.health import router as health_router
 
 app = FastAPI(
-    title="Rex-Omni Vision API",
+    title="Auto Labeling Service",
     description=(
-        "Unified multi-model vision inference API.\n\n"
-        "Supports:\n"
-        "- RexOmni (Detection, OCR, Keypoint, Visual Prompting)\n"
-        "- Florence-2 (Captioning, Grounding, Segmentation, Dense Region Tasks)\n\n"
-        "Use task-specific endpoints for backward compatibility, "
-        "or `/vision` for registry-based unified inference."
+        "Vision inference API for auto-labeling.\n\n"
+        "• RexOmni tasks\n"
+        "• Florence-2 vision-language tasks\n\n"
+        "Model selection is handled at the application layer."
     ),
-    version="1.1",
-    openapi_tags=[
-        {"name": "vision", "description": "Unified registry-based vision inference (RexOmni + Florence)"},
-        {"name": "detection", "description": "RexOmni object detection with visualization"},
-        {"name": "ocr", "description": "RexOmni OCR"},
-        {"name": "keypoint", "description": "RexOmni pose and landmark estimation"},
-        {"name": "visual_prompting", "description": "RexOmni guided detection via bounding boxes"},
-        {"name": "health", "description": "Operational readiness checks"},
-    ],
+    version="2.0",
 )
 
-# --------------------------------------------------
-# Router registration
-# --------------------------------------------------
-
-# Unified registry-based endpoint (NEW)
-app.include_router(vision.router)
-
-# Legacy / task-specific RexOmni endpoints (UNCHANGED)
-app.include_router(detection.router)
-app.include_router(ocr.router)
-app.include_router(keypoint.router)
-app.include_router(visual_prompting.router)
-
-# Health
-app.include_router(health.router)
+# -----------------------------
+# Routers
+# -----------------------------
+app.include_router(rexomni_router)
+app.include_router(florence_router)
+#app.include_router(health_router)
 
 
-if __name__ == "__main__":  # pragma: no cover - manual entrypoint
+if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",

@@ -65,7 +65,7 @@ class Florence2InferenceService:
         return parsed_answer
 
     # -----------------------------
-    # Utilities
+    # Drawing Utilities
     # -----------------------------
     @staticmethod
     def draw_polygons(image: Image.Image, prediction: dict, fill_mask=False):
@@ -73,7 +73,7 @@ class Florence2InferenceService:
         polygons_list = prediction.get('polygons', [])
         labels = prediction.get('labels', [])
 
-        # If there are no polygons, check for bboxes and convert to polygons
+        # If no polygons, fallback to bboxes
         if not polygons_list and 'bboxes' in prediction:
             polygons_list = [np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]]) for x1, y1, x2, y2 in prediction['bboxes']]
 
@@ -87,18 +87,11 @@ class Florence2InferenceService:
                     if len(poly_arr) < 3:
                         continue
                     poly_flat = poly_arr.reshape(-1).tolist()
-                    if fill_mask:
-                        draw.polygon(poly_flat, outline=color, fill=fill_color)
-                    else:
-                        draw.polygon(poly_flat, outline=color)
+                    draw.polygon(poly_flat, outline=color, fill=fill_color)
                     draw.text((poly_flat[0]+8, poly_flat[1]+2), label, fill=color)
             else:
-                # Single bbox polygon
                 poly_arr = np.array(polygons).reshape(-1).tolist()
-                if fill_mask:
-                    draw.polygon(poly_arr, outline=color, fill=fill_color)
-                else:
-                    draw.polygon(poly_arr, outline=color)
+                draw.polygon(poly_arr, outline=color, fill=fill_color)
                 draw.text((poly_arr[0]+8, poly_arr[1]+2), label, fill=color)
         return image
 
@@ -109,9 +102,9 @@ class Florence2InferenceService:
         labels = prediction.get('labels', [])
         for box, label in zip(bboxes, labels):
             color = random.choice(colormap)
-            new_box = np.array(box).reshape(-1).tolist()
-            draw.polygon(new_box, width=3, outline=color)
-            draw.text((new_box[0]+8, new_box[1]+2), label, fill=color)
+            poly = np.array(box).reshape(-1).tolist()
+            draw.polygon(poly, width=3, outline=color)
+            draw.text((poly[0]+8, poly[1]+2), label, fill=color)
         return image
 
     @staticmethod
@@ -149,29 +142,21 @@ class Florence2InferenceService:
         results = None
         output_image = None
 
-        # -----------------------------
         # Task categories
-        # -----------------------------
         caption_tasks = ['Caption', 'Detailed Caption', 'More Detailed Caption']
         grounding_tasks = ['Caption + Grounding', 'Detailed Caption + Grounding', 'More Detailed Caption + Grounding']
         seg_tasks = ['Referring Expression Segmentation', 'Region to Segmentation']
         region_tasks = ['Region to Category', 'Region to Description']
         dense_tasks = ['Dense Region Caption', 'Region Proposal']
 
-        # -----------------------------
         # Run specific task
-        # -----------------------------
         if task_name in caption_tasks:
-            task_map = {'Caption': '<CAPTION>',
-                        'Detailed Caption': '<DETAILED_CAPTION>',
-                        'More Detailed Caption': '<MORE_DETAILED_CAPTION>'}
+            task_map = {'Caption': '<CAPTION>', 'Detailed Caption': '<DETAILED_CAPTION>', 'More Detailed Caption': '<MORE_DETAILED_CAPTION>'}
             key = task_map[task_name]
             results = self.run_example(key, image)
 
         elif task_name in grounding_tasks:
-            base_map = {'Caption + Grounding':'<CAPTION>',
-                        'Detailed Caption + Grounding':'<DETAILED_CAPTION>',
-                        'More Detailed Caption + Grounding':'<MORE_DETAILED_CAPTION>'}
+            base_map = {'Caption + Grounding':'<CAPTION>', 'Detailed Caption + Grounding':'<DETAILED_CAPTION>', 'More Detailed Caption + Grounding':'<MORE_DETAILED_CAPTION>'}
             base_key = base_map[task_name]
             base_results = self.run_example(base_key, image)
             caption_text = base_results.get(base_key, str(base_results))
@@ -185,12 +170,10 @@ class Florence2InferenceService:
         elif task_name == 'Open Vocabulary Detection':
             task_prompt = '<OPEN_VOCABULARY_DETECTION>'
             raw_results = self.run_example(task_prompt, image, text_input)
-            results = {'<OPEN_VOCABULARY_DETECTION>': self.convert_to_od_format(
-                raw_results.get('<OPEN_VOCABULARY_DETECTION>', raw_results) if isinstance(raw_results, dict) else {})}
+            results = {'<OPEN_VOCABULARY_DETECTION>': self.convert_to_od_format(raw_results)}
 
         elif task_name in dense_tasks:
-            task_map = {'Dense Region Caption':'<DENSE_REGION_CAPTION>',
-                        'Region Proposal':'<REGION_PROPOSAL>'}
+            task_map = {'Dense Region Caption':'<DENSE_REGION_CAPTION>', 'Region Proposal':'<REGION_PROPOSAL>'}
             key = task_map[task_name]
             results = self.run_example(key, image)
 
@@ -198,14 +181,12 @@ class Florence2InferenceService:
             results = self.run_example('<CAPTION_TO_PHRASE_GROUNDING>', image, text_input)
 
         elif task_name in seg_tasks:
-            task_map = {'Referring Expression Segmentation':'<REFERRING_EXPRESSION_SEGMENTATION>',
-                        'Region to Segmentation':'<REGION_TO_SEGMENTATION>'}
+            task_map = {'Referring Expression Segmentation':'<REFERRING_EXPRESSION_SEGMENTATION>', 'Region to Segmentation':'<REGION_TO_SEGMENTATION>'}
             key = task_map[task_name]
             results = self.run_example(key, image, text_input)
 
         elif task_name in region_tasks:
-            task_map = {'Region to Category':'<REGION_TO_CATEGORY>',
-                        'Region to Description':'<REGION_TO_DESCRIPTION>'}
+            task_map = {'Region to Category':'<REGION_TO_CATEGORY>', 'Region to Description':'<REGION_TO_DESCRIPTION>'}
             key = task_map[task_name]
             results = self.run_example(key, image, text_input)
 
@@ -217,26 +198,27 @@ class Florence2InferenceService:
         else:
             raise ValueError(f"Unknown task: {task_name}")
 
-        # -----------------------------
         # Visualization
         # -----------------------------
         if visualize:
             output_image = copy.deepcopy(image)
+            # Unwrap nested task dict for drawing
+            draw_data = None
+            if len(results) == 1:
+                draw_data = list(results.values())[0]
+            
             if task_name in seg_tasks:
-                output_image = self.draw_polygons(output_image, results, fill_mask=True)
+                output_image = self.draw_polygons(output_image, draw_data, fill_mask=True)
             elif task_name == 'OCR with Region':
-                output_image = self.draw_ocr_bboxes(output_image, results)
-            elif task_name in ['Object Detection', 'Open Vocabulary Detection']:
-                key = list(results.keys())[0]
-                # Draw boxes instead of polygons if bboxes exist
-                if 'bboxes' in results[key]:
-                    output_image = self.draw_bboxes(output_image, results[key])
-                else:
-                    output_image = self.draw_polygons(output_image, results[key])
+                output_image = self.draw_ocr_bboxes(output_image, draw_data)
+            elif task_name in ['Object Detection', 'Open Vocabulary Detection', *region_tasks, *dense_tasks]:
+                if draw_data is not None:
+                    if 'bboxes' in draw_data or 'quad_boxes' in draw_data:
+                        output_image = self.draw_bboxes(output_image, draw_data)
+                    elif 'polygons' in draw_data:
+                        output_image = self.draw_polygons(output_image, draw_data)
 
-        # -----------------------------
         # Ensure results are dict
-        # -----------------------------
         if not isinstance(results, dict):
             results = {task_name: results}
 
