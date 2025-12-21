@@ -1,4 +1,4 @@
-# Auto Labeling Platform
+# Multi-task Automate Annotation Platform
 
 ![Project Banner](https://github.com/alirzx/Auto-Labeling-Service-Based-on-RexOmni-Arcitecture-/blob/main/rexomni_pic.png?raw=true)
 
