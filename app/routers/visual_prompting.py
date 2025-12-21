@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.dependencies import get_rexomni_service
-from inference.rexomni_service import RexOmniService
+from inference.rexomni.rexomni_service import RexOmniService
 
 router = APIRouter(prefix="/visual_prompting", tags=["visual_prompting"])
 

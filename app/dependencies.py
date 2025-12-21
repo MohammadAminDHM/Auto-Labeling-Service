@@ -1,7 +1,8 @@
 """Shared application dependencies."""
 from functools import lru_cache
 
-from inference.rexomni_service import RexOmniService
+# Absolute import from project root
+from inference.rexomni.rexomni_service import RexOmniService
 
 
 @lru_cache(maxsize=1)

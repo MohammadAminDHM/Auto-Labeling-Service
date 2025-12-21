@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_rexomni_service
-from inference.rexomni_service import RexOmniService
+from inference.rexomni.rexomni_service import RexOmniService
 
 import io
 import json
@@ -34,7 +34,7 @@ async def detection(
         drawn_pil.save(img_buffer, format="JPEG")
         img_buffer.seek(0)
 
-        return StreamingResponse(
+        return StreamingResponse( 
             img_buffer,
             media_type="image/jpeg",
             headers={"X-Rex-Detections": json.dumps(results)},
