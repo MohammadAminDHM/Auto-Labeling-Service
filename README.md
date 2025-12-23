@@ -1,10 +1,10 @@
-# Auto Labeling Platform
+# Multi-task Automate Annotation Platform
 
 ![Project Banner](https://github.com/alirzx/Auto-Labeling-Service-Based-on-RexOmni-Arcitecture-/blob/main/rexomni_pic.png?raw=true)
 
 ---
 
-# Rex-Omni Auto-Labeling Service
+# MultiModal Auto-Annotation Service
 
 A **modular FastAPI service** leveraging the **Rex-Omni multimodal framework**, designed for **automated dataset labeling** across **14+ computer vision tasks**.
 
