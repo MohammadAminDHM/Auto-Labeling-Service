@@ -4,7 +4,7 @@
 
 ---
 
-# MultiModal Auto-Labeling Service
+# MultiModal Auto-Annotation Service
 
 A **modular FastAPI service** leveraging the **Rex-Omni multimodal framework**, designed for **automated dataset labeling** across **14+ computer vision tasks**.
 
