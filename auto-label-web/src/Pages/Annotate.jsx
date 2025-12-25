@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { base44 } from "@/api/base44client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,14 +9,8 @@ import TaskSelector from "../components/annotate/TaskSelector";
 import ImageUploader from "../components/annotate/ImageUploader";
 import ResultsViewer from "../components/annotate/ResultsViewer";
 import TaskInputFields from "../components/annotate/TaskInputFields";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/Components/ui/dialog";
+import { Label } from "@/Components/ui/label";
 
 export default function Annotate() {
   const [selectedTasks, setSelectedTasks] = useState([]);

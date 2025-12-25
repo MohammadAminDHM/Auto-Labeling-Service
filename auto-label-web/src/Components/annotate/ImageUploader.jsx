@@ -2,7 +2,7 @@ import React, { useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { base44 } from "@/api/base44client";
 
 export default function ImageUploader({ onImagesUploaded, projectId }) {
   const [uploading, setUploading] = useState(false);

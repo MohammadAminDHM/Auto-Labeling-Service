@@ -1,7 +1,5 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "./utils";
-import { base44 } from "@/api/base44Client";
 import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
@@ -10,27 +8,47 @@ import {
   History,
   LogOut,
   Sparkles,
-  User
+  User,
 } from "lucide-react";
+
+// SAFE imports
 import { Button } from "@/components/ui/button";
+import { base44 } from "@/api/base44client";
+
+// Fallback-safe page URL helper
+function safeCreatePageUrl(path) {
+  if (!path) return "/";
+  return `/${path.toLowerCase()}`;
+}
 
 export default function Layout({ children, currentPageName }) {
   const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
-    retry: false
+    queryKey: ["currentUser"],
+    queryFn: async () => {
+      try {
+        return await base44.auth.me();
+      } catch (err) {
+        console.warn("Auth check failed:", err);
+        return null;
+      }
+    },
+    retry: false,
   });
 
   const navItems = [
-    { name: "Home", icon: LayoutDashboard, path: "Landing" },
-    { name: "Dashboard", icon: LayoutDashboard, path: "Dashboard" },
-    { name: "Projects", icon: FolderKanban, path: "Projects" },
-    { name: "Annotate", icon: ImagePlus, path: "Annotate" },
-    { name: "History", icon: History, path: "History" },
+    { name: "Home", icon: LayoutDashboard, path: "landing" },
+    { name: "Dashboard", icon: LayoutDashboard, path: "dashboard" },
+    { name: "Projects", icon: FolderKanban, path: "projects" },
+    { name: "Annotate", icon: ImagePlus, path: "annotate" },
+    { name: "History", icon: History, path: "history" },
   ];
 
   const handleLogout = () => {
-    base44.auth.logout();
+    try {
+      base44.auth.logout();
+    } catch (e) {
+      console.warn("Logout failed", e);
+    }
   };
 
   return (
@@ -45,7 +63,9 @@ export default function Layout({ children, currentPageName }) {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">AutoLabel AI</h1>
-              <p className="text-xs text-slate-400">Vision Annotation Platform</p>
+              <p className="text-xs text-slate-400">
+                Vision Annotation Platform
+              </p>
             </div>
           </div>
         </div>
@@ -54,11 +74,13 @@ export default function Layout({ children, currentPageName }) {
         <nav className="flex-1 p-4 space-y-2">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = currentPageName === item.path;
+            const isActive =
+              currentPageName?.toLowerCase() === item.path;
+
             return (
               <Link
                 key={item.path}
-                to={createPageUrl(item.path)}
+                to={safeCreatePageUrl(item.path)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                   isActive
                     ? "bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border border-cyan-500/30"
@@ -83,14 +105,17 @@ export default function Layout({ children, currentPageName }) {
                 <p className="text-sm font-medium text-white truncate">
                   {user.full_name || user.email}
                 </p>
-                <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                <p className="text-xs text-slate-400 truncate">
+                  {user.email}
+                </p>
               </div>
             </div>
+
             <Button
               onClick={handleLogout}
               variant="outline"
-              className="w-full border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
               size="sm"
+              className="w-full border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
             >
               <LogOut className="w-4 h-4 mr-2" />
               Logout
