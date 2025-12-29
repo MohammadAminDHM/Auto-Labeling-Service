@@ -1,45 +1,53 @@
+# app/services/result_serializer.py
 import base64
 
-def normalize_result(result, task=None, model=None, image_bytes=None):
+def normalize_result(result: dict, task: str, model: str, image_bytes: bytes | None = None):
     """
-    Normalize raw model outputs into a consistent schema for frontend.
+    Converts outputs into a normalized schema for frontend.
     """
     normalized = {
         "ok": True,
         "task": task,
         "model": model,
-        "image_bytes": None,
-        "results": {},
+        "image_bytes": base64.b64encode(image_bytes).decode() if image_bytes else None,
+        "results": {}
     }
 
-    if image_bytes:
-        normalized["image_bytes"] = base64.b64encode(image_bytes).decode()
-
     if not result:
+        print(f"[ResultSerializer] Empty result for task '{task}'")
         return normalized
 
-    # Detection / OD
-    if "bboxes" in result or "labels" in result:
-        normalized["results"]["bboxes"] = result.get("bboxes", [])
-        normalized["results"]["labels"] = result.get("labels", [])
-        normalized["results"]["scores"] = result.get("scores", [])
+    if task.lower() in ["detection", "object_detection"]:
+        normalized["results"] = {
+            "<OD>": {
+                "<OD>": {
+                    "bboxes": result.get("bboxes", []),
+                    "labels": result.get("labels", []),
+                    "scores": result.get("scores", [])
+                }
+            }
+        }
+    elif task.lower() in ["open_vocab_detection", "open_vocabulary_detection"]:
+        normalized["results"] = {
+            "<OVD>": {
+                "<OVD>": {
+                    "bboxes": result.get("bboxes", []),
+                    "labels": result.get("labels", []),
+                    "scores": result.get("scores", [])
+                }
+            }
+        }
+    elif task.lower() in ["region_segmentation", "region_to_segmentation"]:
+        normalized["results"] = {
+            "<RS>": {
+                "polygons": result.get("polygons", []),
+                "labels": result.get("labels", []),
+                "bboxes": result.get("bboxes", []),
+                "masks": result.get("masks", {})
+            }
+        }
+    else:
+        normalized["results"] = result
 
-    # OCR
-    if "text" in result or "boxes" in result:
-        normalized["results"]["text"] = result.get("text", "")
-        normalized["results"]["boxes"] = result.get("boxes", [])
-
-    # Caption
-    if "caption" in result:
-        normalized["results"]["caption"] = result.get("caption", "")
-
-    # Segmentation / masks
-    if "masks" in result or "categories" in result:
-        normalized["results"]["masks"] = result.get("masks", [])
-        normalized["results"]["categories"] = result.get("categories", [])
-
-    # Visual prompting / keypoints
-    if "keypoints" in result:
-        normalized["results"]["keypoints"] = result.get("keypoints", [])
-
+    print(f"[ResultSerializer] Normalized result for task '{task}'")
     return normalized
