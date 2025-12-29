@@ -1,26 +1,23 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+// src/App.jsx
+import React from "react";
+import { Routes, Route } from "react-router-dom";
+import MainLayout from "./layouts/MainLayout";
 import Home from "./pages/Home";
 import Upload from "./pages/Upload";
-import Jobs from "./pages/Jobs";
-import JobDetail from "./pages/JobDetail";
-import NotFound from "./pages/NotFound";
-import MainLayout from "./layouts/MainLayout";
+import Projects from "./pages/projects";
+import Project from "./pages/project";
+import Annotate from "./pages/Annotate";
 
-function App() {
+export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<Home />} />
-          <Route path="/upload" element={<Upload />} />
-          <Route path="/jobs" element={<Jobs />} />
-          <Route path="/jobs/:id" element={<JobDetail />} />
-        </Route>
-
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </BrowserRouter>
+    <Routes>
+      <Route element={<MainLayout />}>
+        <Route index element={<Home />} />
+        <Route path="/upload" element={<Upload />} />
+        <Route path="/projects" element={<Projects />} />
+        <Route path="/projects/:id" element={<Project />} />
+        <Route path="/annotate" element={<Annotate />} />
+      </Route>
+    </Routes>
   );
 }
-
-export default App;

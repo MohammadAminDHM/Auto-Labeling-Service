@@ -35,7 +35,7 @@ class ModelRegistry:
         }
 
         self.default_model = {
-            TaskType.DETECTION: ModelType.REXOMNI,
+            TaskType.DETECTION: ModelType.FLORENCE,
             TaskType.OPEN_VOCAB_DETECTION: ModelType.FLORENCE,
             TaskType.OCR: ModelType.REXOMNI,
             TaskType.OCR_WITH_REGION: ModelType.FLORENCE,

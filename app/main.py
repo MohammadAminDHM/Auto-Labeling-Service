@@ -3,6 +3,9 @@ from fastapi import FastAPI
 from app.routers.rexomni_endpoints import router as rexomni_router
 from app.routers.florence_endpoints import router as florence_router
 #from app.health import router as health_router
+from app.routers.jobs import router as jobs_router
+
+
 
 app = FastAPI(
     title="Auto Labeling Service",
@@ -20,6 +23,7 @@ app = FastAPI(
 # -----------------------------
 app.include_router(rexomni_router)
 app.include_router(florence_router)
+app.include_router(jobs_router)
 #app.include_router(health_router)
 
 
