@@ -4,6 +4,7 @@ import base64
 def normalize_result(result: dict, task: str, model: str, image_bytes: bytes | None = None):
     """
     Converts outputs into a normalized schema for frontend.
+    All tasks use a consistent structure.
     """
     normalized = {
         "ok": True,
@@ -17,35 +18,26 @@ def normalize_result(result: dict, task: str, model: str, image_bytes: bytes | N
         print(f"[ResultSerializer] Empty result for task '{task}'")
         return normalized
 
-    if task.lower() in ["detection", "object_detection"]:
+    task_lower = task.lower()
+
+    # Detection tasks
+    if task_lower in ["detection", "object_detection", "open_vocab_detection", "open_vocabulary_detection"]:
         normalized["results"] = {
-            "<OD>": {
-                "<OD>": {
-                    "bboxes": result.get("bboxes", []),
-                    "labels": result.get("labels", []),
-                    "scores": result.get("scores", [])
-                }
-            }
+            "bboxes": result.get("bboxes", []),
+            "labels": result.get("labels", []),
+            "scores": result.get("scores", [])
         }
-    elif task.lower() in ["open_vocab_detection", "open_vocabulary_detection"]:
+
+    # Region segmentation tasks
+    elif task_lower in ["region_segmentation", "region_to_segmentation"]:
         normalized["results"] = {
-            "<OVD>": {
-                "<OVD>": {
-                    "bboxes": result.get("bboxes", []),
-                    "labels": result.get("labels", []),
-                    "scores": result.get("scores", [])
-                }
-            }
+            "polygons": result.get("polygons", []),
+            "labels": result.get("labels", []),
+            "bboxes": result.get("bboxes", []),
+            "masks": result.get("masks", {})
         }
-    elif task.lower() in ["region_segmentation", "region_to_segmentation"]:
-        normalized["results"] = {
-            "<RS>": {
-                "polygons": result.get("polygons", []),
-                "labels": result.get("labels", []),
-                "bboxes": result.get("bboxes", []),
-                "masks": result.get("masks", {})
-            }
-        }
+
+    # Other tasks
     else:
         normalized["results"] = result
 

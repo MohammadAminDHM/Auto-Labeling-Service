@@ -2,100 +2,111 @@
 import React, { useState } from "react";
 import UploadZone from "../components/UploadZone";
 import ProgressBar from "../components/ProgressBar";
-import { createJob } from "../services/api";
-import useJobPoll from "../hooks/useJobPoll";
+import { submitJob, waitForJob } from "../services/api";
 
 export default function Upload() {
-  const [file, setFile] = useState(null);
-  const [jobId, setJobId] = useState(null);
-  const [mockProgress, setMockProgress] = useState(0);
+  const [task, setTask] = useState("detection");
+  const [model, setModel] = useState("rexomni");
+  const [job, setJob] = useState(null);
+  const [result, setResult] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const jobState = useJobPoll(jobId);
-
-  const handleFile = (f) => {
-    setFile(f);
-    setJobId(null);
-    setMockProgress(0);
+  const handleFile = (file) => {
+    setJob(null);
+    setResult(null);
+    setProgress(0);
     setError(null);
+
+    if (!file) return;
+    startJob(file);
   };
 
-  const startJob = async () => {
-    if (!file) return setError("Please choose a file first.");
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("task", "detection"); // default task for demo; UI will allow task selection later
-    fd.append("model", "rexomni");
-
+  const startJob = async (file) => {
+    setLoading(true);
     try {
-      const res = await createJob(fd);
-      // expected res { job_id: '...', status: 'queued' }
-      if (res?.job_id) {
-        setJobId(res.job_id);
-      } else {
-        // API responded but without job id — fallback to mock
-        startMock();
-      }
+      const jobData = await submitJob(file, task, model);
+      setJob(jobData);
+
+      // Polling for result
+      const completedJob = await waitForJob(jobData.id, 2000, 120000);
+      setResult(completedJob.result);
+      setProgress(100);
     } catch (err) {
-      // backend not available — fallback to mock simulation
-      console.warn("createJob failed, using mock:", err?.message || err);
-      startMock();
+      console.error("Job failed:", err);
+      setError("Job failed or timed out");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const startMock = () => {
-    setJobId("mock-" + Date.now());
-    setMockProgress(5);
-    let p = 5;
-    const t = setInterval(() => {
-      p += Math.floor(Math.random() * 12) + 5;
-      if (p >= 100) {
-        p = 100;
-        clearInterval(t);
-      }
-      setMockProgress(p);
-    }, 700);
+  const renderBBoxes = () => {
+    if (!result?.results) return null;
+
+    const taskKey = Object.keys(result.results)[0];
+    const innerKey = Object.keys(result.results[taskKey])[0];
+    const data = result.results[taskKey][innerKey];
+
+    if (!data?.bboxes) return null;
+
+    return data.bboxes.map((box, idx) => {
+      const [x1, y1, x2, y2] = box;
+      const label = data.labels?.[idx] ?? "";
+      const score = data.scores?.[idx] ?? 0;
+      return (
+        <div
+          key={idx}
+          className="absolute border-2 border-red-500 text-red-500 text-xs font-bold px-1"
+          style={{
+            top: y1,
+            left: x1,
+            width: x2 - x1,
+            height: y2 - y1,
+          }}
+        >
+          {label} ({(score * 100).toFixed(0)}%)
+        </div>
+      );
+    });
   };
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto p-4">
       <h2 className="text-2xl font-semibold mb-4">Upload & Start Annotation</h2>
 
-      <div className="mb-4">
-        <UploadZone onFile={handleFile} />
-        {file && (
-          <div className="mt-3 flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">{file.name}</div>
-              <div className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</div>
-            </div>
-            <div>
-              <button onClick={() => setFile(null)} className="text-sm text-red-500">Remove</button>
-            </div>
-          </div>
-        )}
+      {/* Task / Model selection */}
+      <div className="flex gap-4 mb-4">
+        <select value={task} onChange={(e) => setTask(e.target.value)} className="border p-2 rounded">
+          <option value="detection">Detection</option>
+          <option value="open_vocab_detection">Open Vocabulary Detection</option>
+          <option value="region_segmentation">Segmentation</option>
+        </select>
+
+        <select value={model} onChange={(e) => setModel(e.target.value)} className="border p-2 rounded">
+          <option value="rexomni">RexOmni</option>
+          <option value="default-model">Default Model</option>
+        </select>
       </div>
 
-      <div className="flex gap-3 items-center mb-6">
-        <button onClick={startJob} className="px-4 py-2 bg-indigo-600 text-white rounded">Start Annotation</button>
-        <button onClick={() => { setFile(null); setJobId(null); setMockProgress(0); }} className="px-4 py-2 border rounded">Reset</button>
-      </div>
+      <UploadZone task={task} model={model} onJobSubmitted={handleFile} />
 
-      <div className="space-y-3">
-        {jobId && (
-          <div className="bg-white p-4 rounded shadow">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-medium">Job ID: {jobId}</div>
-              <div className="text-xs text-gray-500">{jobState?.status || "mock"}</div>
+      {loading && <div className="mt-2 text-gray-600">Uploading / processing...</div>}
+
+      {job && (
+        <div className="bg-white p-4 rounded shadow mt-4 relative">
+          {result?.image_url && (
+            <div className="relative inline-block">
+              <img src={result.image_url} alt="Result" className="max-w-full border rounded" />
+              {task.includes("detection") && renderBBoxes()}
             </div>
+          )}
 
-            <ProgressBar value={jobState?.progress ?? mockProgress} />
-            <div className="mt-2 text-xs text-gray-500">Progress: {jobState?.progress ?? mockProgress}%</div>
-          </div>
-        )}
+          <ProgressBar value={progress} />
+        </div>
+      )}
 
-        {error && <div className="text-sm text-red-500">{error}</div>}
-      </div>
+      {error && <div className="text-red-500 mt-2">{error}</div>}
     </div>
   );
 }

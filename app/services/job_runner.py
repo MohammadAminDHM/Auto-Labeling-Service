@@ -18,18 +18,32 @@ def submit_job(task: str, image_bytes: bytes, model: str | None, params: dict):
     thread.start()
     return job
 
-
 def run_job(job):
     print(f"[JobRunner] Running job {job['id']} task '{job['task']}' with model '{job['model']}'")
     try:
-        # Example: simulate a model prediction (replace with your real model)
-        # Here we mock a detection result
-        result = {
-            "bboxes": [[10, 10, 100, 100]],
-            "labels": ["example_label"],
-            "scores": [0.95],
-            "image_bytes": job.get("image_bytes")  # optional visualization
-        }
+        # Simulate model prediction
+        task = job["task"].lower()
+
+        if task in ["detection", "object_detection", "open_vocab_detection", "open_vocabulary_detection"]:
+            result = {
+                "bboxes": [[10, 10, 100, 100]],  # mock example
+                "labels": ["example_label"],
+                "scores": [0.95],
+                "image_bytes": job.get("image_bytes")
+            }
+        elif task in ["region_segmentation", "region_to_segmentation"]:
+            result = {
+                "polygons": [[[10, 10], [50, 10], [50, 50], [10, 50]]],
+                "labels": ["example_segment"],
+                "bboxes": [[10, 10, 50, 50]],
+                "masks": {},  # optional
+                "image_bytes": job.get("image_bytes")
+            }
+        else:
+            result = {
+                "output": "task not implemented",
+                "image_bytes": job.get("image_bytes")
+            }
 
         save_result(job["id"], result)
         print(f"[JobRunner] Job {job['id']} completed successfully")
