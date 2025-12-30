@@ -8,59 +8,164 @@ const api = axios.create({
   timeout: 120000,
 });
 
+/* ------------------------------------------------------------------ */
+/* Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function normalizeSubmitResponse(data) {
+  if (!data) return null;
+
+  if (data.job_id) return { jobId: data.job_id };
+  if (data.id) return { jobId: data.id };
+  if (data.job?.id) return { jobId: data.job.id };
+
+  console.error("[API] Unknown submit response shape:", data);
+  return null;
+}
+
+function normalizeJobStatus(job) {
+  if (!job) return null;
+
+  let status = job.status;
+  if (status === "done") status = "completed";
+  if (status === "error") status = "failed";
+
+  return {
+    id: job.id,
+    status,
+    progress: job.progress ?? 0,
+    error: job.error ?? null,
+    has_result: Boolean(job.has_result),
+  };
+}
+
+function normalizeJobResult(result) {
+  if (!result) return null;
+
+  const normalized = { ...result };
+
+  if (result.image_bytes) {
+    normalized.image_url = `data:image/png;base64,${result.image_bytes}`;
+  }
+
+  return normalized;
+}
+
+/* ------------------------------------------------------------------ */
+/* API calls                                                          */
+/* ------------------------------------------------------------------ */
+
 /**
- * Submit a job to backend
- * @param {File} file - uploaded file
- * @param {string} task - task name (detection, segmentation, etc.)
- * @param {string} model - model name
- * @param {object} params - optional parameters
+ * Submit a new job
+ * Backend expects:
+ * - file (binary)
+ * - task (string)
+ * - model (string)
+ * - text_input (optional string)
  */
-export async function submitJob(file, task, model, params = {}) {
+export async function submitJob(
+  file,
+  task,
+  model,
+  textInput = ""
+) {
+  if (!file || !task || !model) {
+    throw new Error("file, task, and model are required");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
   formData.append("task", task);
   formData.append("model", model);
-  formData.append("params", JSON.stringify(params));
 
-  const res = await api.post("/api/jobs", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-  return res.data; // returns job info including job id
+  if (textInput) {
+    formData.append("text_input", textInput);
+  }
+
+  try {
+    const res = await api.post("/api/jobs", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+
+    const normalized = normalizeSubmitResponse(res.data);
+    if (!normalized?.jobId) {
+      throw new Error("Invalid submit response");
+    }
+
+    console.info("[API] Job submitted:", normalized.jobId);
+    return normalized; // { jobId }
+  } catch (err) {
+    console.error("[API] submitJob error:", err.response?.data || err);
+    throw err;
+  }
 }
 
 /**
- * Fetch job result by ID
- * @param {string} jobId
+ * Get job metadata / status
+ */
+export async function getJob(jobId) {
+  if (!jobId) throw new Error("jobId is required");
+
+  const res = await api.get(`/api/jobs/${jobId}`);
+  return normalizeJobStatus(res.data);
+}
+
+/**
+ * Get final job result
+ * Only call when has_result === true
  */
 export async function getJobResult(jobId) {
-  const res = await api.get(`/api/jobs/${jobId}`);
-  const data = res.data;
+  if (!jobId) throw new Error("jobId is required");
 
-  // Decode image_bytes if exists
-  if (data?.result?.image_bytes) {
-    data.result.image_url = `data:image/png;base64,${data.result.image_bytes}`;
-  }
-  return data;
+  const res = await api.get(`/api/jobs/${jobId}/result`);
+  return normalizeJobResult(res.data);
 }
 
-// Polling helper
-export async function waitForJob(jobId, interval = 2000, timeout = 120000) {
+/**
+ * Poll job until completion, then fetch result
+ */
+export async function waitForJob(
+  jobId,
+  {
+    interval = 2000,
+    timeout = 120000,
+  } = {}
+) {
   const start = Date.now();
-  return new Promise((resolve, reject) => {
-    const check = async () => {
-      const job = await getJobResult(jobId);
-      if (job.status === "completed") return resolve(job);
-      if (job.status === "failed") return reject(job);
-      if (Date.now() - start > timeout) return reject({ status: "timeout" });
-      setTimeout(check, interval);
-    };
-    check();
-  });
-}
 
-// Health check
-export async function ping() {
-  return api.get("/health").then(r => r.data).catch(() => null);
+  return new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        const job = await getJob(jobId);
+
+        if (job.status === "failed") {
+          return reject(new Error(job.error || "Job failed"));
+        }
+
+        if (job.status === "completed") {
+          if (!job.has_result) {
+            return reject(new Error("Job completed but no result found"));
+          }
+
+          const result = await getJobResult(jobId);
+          return resolve({
+            job,
+            result,
+          });
+        }
+
+        if (Date.now() - start > timeout) {
+          return reject(new Error("Job polling timeout"));
+        }
+
+        setTimeout(poll, interval);
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    poll();
+  });
 }
 
 export default api;

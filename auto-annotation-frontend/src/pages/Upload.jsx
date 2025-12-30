@@ -1,112 +1,99 @@
 // src/pages/Upload.jsx
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import UploadZone from "../components/UploadZone";
-import ProgressBar from "../components/ProgressBar";
-import { submitJob, waitForJob } from "../services/api";
+import { submitJob } from "../services/api";
 
 export default function Upload() {
+  const navigate = useNavigate();
+
   const [task, setTask] = useState("detection");
-  const [model, setModel] = useState("rexomni");
-  const [job, setJob] = useState(null);
-  const [result, setResult] = useState(null);
-  const [progress, setProgress] = useState(0);
+  const [model, setModel] = useState("florence");
+  const [selectedFile, setSelectedFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleFile = (file) => {
-    setJob(null);
-    setResult(null);
-    setProgress(0);
+  const handleFileSelected = (file) => {
+    console.log("[Upload] File selected:", file);
+    setSelectedFile(file);
     setError(null);
-
-    if (!file) return;
-    startJob(file);
   };
 
-  const startJob = async (file) => {
-    setLoading(true);
-    try {
-      const jobData = await submitJob(file, task, model);
-      setJob(jobData);
+  const handleSubmit = async () => {
+    if (!selectedFile) {
+      setError("Please select a file first");
+      return;
+    }
 
-      // Polling for result
-      const completedJob = await waitForJob(jobData.id, 2000, 120000);
-      setResult(completedJob.result);
-      setProgress(100);
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log("[Upload] Submitting job", {
+        task,
+        model,
+        file: selectedFile.name,
+      });
+
+      const { jobId } = await submitJob(selectedFile, task, model);
+
+      console.log("[Upload] Job created with ID:", jobId);
+      navigate(`/annotate/${jobId}`);
     } catch (err) {
-      console.error("Job failed:", err);
-      setError("Job failed or timed out");
+      console.error("[Upload] Job submission failed:", err);
+      setError("Failed to submit job. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const renderBBoxes = () => {
-    if (!result?.results) return null;
-
-    const taskKey = Object.keys(result.results)[0];
-    const innerKey = Object.keys(result.results[taskKey])[0];
-    const data = result.results[taskKey][innerKey];
-
-    if (!data?.bboxes) return null;
-
-    return data.bboxes.map((box, idx) => {
-      const [x1, y1, x2, y2] = box;
-      const label = data.labels?.[idx] ?? "";
-      const score = data.scores?.[idx] ?? 0;
-      return (
-        <div
-          key={idx}
-          className="absolute border-2 border-red-500 text-red-500 text-xs font-bold px-1"
-          style={{
-            top: y1,
-            left: x1,
-            width: x2 - x1,
-            height: y2 - y1,
-          }}
-        >
-          {label} ({(score * 100).toFixed(0)}%)
-        </div>
-      );
-    });
-  };
-
   return (
-    <div className="max-w-3xl mx-auto p-4">
-      <h2 className="text-2xl font-semibold mb-4">Upload & Start Annotation</h2>
+    <div className="max-w-3xl mx-auto p-6">
+      <h2 className="text-2xl font-semibold mb-6">Upload Image</h2>
 
-      {/* Task / Model selection */}
+      {/* Task & model */}
       <div className="flex gap-4 mb-4">
-        <select value={task} onChange={(e) => setTask(e.target.value)} className="border p-2 rounded">
-          <option value="detection">Detection</option>
+        <select
+          value={task}
+          onChange={(e) => setTask(e.target.value)}
+          className="border p-2 rounded"
+        >
+          <option value="detection">Object Detection</option>
           <option value="open_vocab_detection">Open Vocabulary Detection</option>
           <option value="region_segmentation">Segmentation</option>
         </select>
 
-        <select value={model} onChange={(e) => setModel(e.target.value)} className="border p-2 rounded">
-          <option value="rexomni">RexOmni</option>
-          <option value="default-model">Default Model</option>
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="border p-2 rounded"
+        >
+          <option value="florence">Florence</option>
+          <option value="rexomni">RexOmni (server)</option>
         </select>
       </div>
 
-      <UploadZone task={task} model={model} onJobSubmitted={handleFile} />
+      {/* Upload */}
+      <UploadZone onFileSelected={handleFileSelected} />
 
-      {loading && <div className="mt-2 text-gray-600">Uploading / processing...</div>}
+      {/* Submit */}
+      <div className="mt-4">
+        <button
+          onClick={handleSubmit}
+          disabled={loading || !selectedFile}
+          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-gray-400"
+        >
+          {loading ? "Submitting…" : "Start Annotation"}
+        </button>
+      </div>
 
-      {job && (
-        <div className="bg-white p-4 rounded shadow mt-4 relative">
-          {result?.image_url && (
-            <div className="relative inline-block">
-              <img src={result.image_url} alt="Result" className="max-w-full border rounded" />
-              {task.includes("detection") && renderBBoxes()}
-            </div>
-          )}
-
-          <ProgressBar value={progress} />
-        </div>
+      {/* Feedback */}
+      {error && <p className="mt-4 text-red-500">{error}</p>}
+      {selectedFile && !loading && (
+        <p className="mt-2 text-gray-700">
+          Selected file: {selectedFile.name}
+        </p>
       )}
-
-      {error && <div className="text-red-500 mt-2">{error}</div>}
     </div>
   );
 }
