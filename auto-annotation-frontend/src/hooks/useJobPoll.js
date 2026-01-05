@@ -5,9 +5,8 @@ import { waitForJob } from "../services/api";
 const useJobPoll = (jobId, options = {}) => {
   const [job, setJob] = useState(null);
   const [result, setResult] = useState(null);
-  const [status, setStatus] = useState("idle"); // idle | running | completed | failed
+  const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
-
   const cancelRef = useRef(false);
 
   useEffect(() => {
@@ -27,9 +26,7 @@ const useJobPoll = (jobId, options = {}) => {
     waitForJob(jobId, {
       ...options,
       onProgress: (jobMeta) => {
-        if (!cancelRef.current) {
-          setJob(jobMeta);
-        }
+        if (!cancelRef.current) setJob(jobMeta);
       },
     })
       .then(({ job, result }) => {
@@ -51,15 +48,7 @@ const useJobPoll = (jobId, options = {}) => {
     };
   }, [jobId]);
 
-  return {
-    job,
-    result,
-    status,
-    error,
-    isRunning: status === "running",
-    isCompleted: status === "completed",
-    isFailed: status === "failed",
-  };
+  return { job, result, status, error, isRunning: status === "running", isCompleted: status === "completed", isFailed: status === "failed" };
 };
 
 export default useJobPoll;

@@ -4,22 +4,36 @@ import { useNavigate } from "react-router-dom";
 
 export default function Home() {
   const nav = useNavigate();
+
   return (
     <div className="max-w-6xl mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+        {/* Intro / CTA */}
         <div>
-          <h1 className="text-4xl font-extrabold text-gray-900 leading-tight">Auto-Annotation Platform</h1>
+          <h1 className="text-4xl font-extrabold text-gray-900 leading-tight">
+            Auto-Annotation Platform
+          </h1>
           <p className="mt-4 text-gray-600">
-            Bootstrap datasets quickly with automated vision tasks (detection, keypoints, OCR, segmentation, captioning).
-            Connect powerful models (RexOmni, Florence) and review annotations in a fast, human-in-the-loop workflow.
+            Bootstrap datasets quickly with automated vision tasks (detection, keypoints, OCR, segmentation, captioning). Connect powerful models (RexOmni, Florence) and review annotations in a fast, human-in-the-loop workflow.
           </p>
 
           <div className="mt-6 flex gap-3">
-            <button onClick={() => nav("/upload")} className="px-5 py-3 bg-indigo-600 text-white rounded-md shadow">Upload & Annotate</button>
-            <button onClick={() => nav("/projects")} className="px-5 py-3 border rounded-md">View Projects</button>
+            <button
+              onClick={() => nav("/upload")}
+              className="px-5 py-3 bg-indigo-600 text-white rounded-md shadow hover:bg-indigo-500"
+            >
+              Upload & Annotate
+            </button>
+            <button
+              onClick={() => nav("/projects")}
+              className="px-5 py-3 border rounded-md hover:border-indigo-600 hover:text-indigo-600"
+            >
+              View Projects
+            </button>
           </div>
         </div>
 
+        {/* Quick demo info */}
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="font-semibold mb-3">Quick demo</h3>
           <ul className="text-sm text-gray-600 space-y-2">

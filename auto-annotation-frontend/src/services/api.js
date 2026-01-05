@@ -23,15 +23,9 @@ const api = axios.create({
  * Backend guarantees: { job_id }
  */
 function normalizeSubmitResponse(data) {
-  if (!data) {
-    throw new Error("Empty submit response");
-  }
+  if (!data) throw new Error("Empty submit response");
 
-  if (data.job_id) {
-    return { jobId: data.job_id };
-  }
-
-  // backward compatibility / defensive
+  if (data.job_id) return { jobId: data.job_id };
   if (data.id) return { jobId: data.id };
   if (data.job?.id) return { jobId: data.job.id };
 
@@ -43,12 +37,9 @@ function normalizeSubmitResponse(data) {
  * Normalize job metadata
  */
 function normalizeJob(job) {
-  if (!job) {
-    throw new Error("Empty job payload");
-  }
+  if (!job) throw new Error("Empty job payload");
 
   const status = job.status;
-
   if (!["queued", "running", "completed", "failed"].includes(status)) {
     console.warn("[API] Unknown job status:", status);
   }
@@ -67,19 +58,18 @@ function normalizeJob(job) {
 /**
  * Normalize job result payload
  *
- * Standard backend contract:
+ * Backend contract:
  * {
  *   ok: boolean
  *   task: string
  *   model: string
  *   results: object
  *   image_bytes?: base64
+ *   artifacts?: array of artifact names
  * }
  */
 function normalizeJobResult(result) {
-  if (!result) {
-    throw new Error("Empty job result");
-  }
+  if (!result) throw new Error("Empty job result");
 
   const normalized = {
     ok: Boolean(result.ok),
@@ -87,11 +77,21 @@ function normalizeJobResult(result) {
     model: result.model ?? null,
     results: result.results ?? {},
     imageUrl: null,
-    raw: result, // keep raw for debugging / advanced UI
+    artifacts: result.artifacts ?? [],
+    raw: result, // keep raw for advanced UI/debug
   };
 
-  if (result.image_bytes) {
+  // Attach overlay image if exists
+  if (result.artifacts?.includes("overlay") && result.image_bytes) {
     normalized.imageUrl = `data:image/png;base64,${result.image_bytes}`;
+  }
+
+  // For tasks with text-only outputs (REGION_CATEGORY, REGION_PROPOSAL)
+  if (
+    ["region_category", "region_proposal"].includes(result.task?.toLowerCase())
+  ) {
+    normalized.imageUrl = null;
+    normalized.artifacts = [];
   }
 
   return normalized;
@@ -111,10 +111,7 @@ export async function getAvailableTasks(model = "florence") {
     });
     return res.data; // { tasks, required_inputs }
   } catch (err) {
-    console.error(
-      "[API] getAvailableTasks error:",
-      err.response?.data || err.message
-    );
+    console.error("[API] getAvailableTasks error:", err.response?.data || err.message);
     throw err;
   }
 }
@@ -123,30 +120,21 @@ export async function getAvailableTasks(model = "florence") {
  * Submit a new inference job
  */
 export async function submitJob(file, task, model, textInput = "") {
-  if (!file || !task || !model) {
-    throw new Error("file, task, and model are required");
-  }
+  if (!file || !task || !model) throw new Error("file, task, and model are required");
 
   const formData = new FormData();
   formData.append("file", file);
   formData.append("task", task.toLowerCase());
   formData.append("model", model.toLowerCase());
-
-  if (textInput) {
-    formData.append("text_input", textInput);
-  }
+  if (textInput) formData.append("text_input", textInput);
 
   try {
     const res = await api.post("/api/jobs", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
-
     return normalizeSubmitResponse(res.data);
   } catch (err) {
-    console.error(
-      "[API] submitJob error:",
-      err.response?.data || err.message
-    );
+    console.error("[API] submitJob error:", err.response?.data || err.message);
     throw err;
   }
 }
@@ -155,18 +143,13 @@ export async function submitJob(file, task, model, textInput = "") {
  * Fetch job metadata
  */
 export async function getJob(jobId) {
-  if (!jobId) {
-    throw new Error("jobId is required");
-  }
+  if (!jobId) throw new Error("jobId is required");
 
   try {
     const res = await api.get(`/api/jobs/${jobId}`);
     return normalizeJob(res.data);
   } catch (err) {
-    console.error(
-      "[API] getJob error:",
-      err.response?.data || err.message
-    );
+    console.error("[API] getJob error:", err.response?.data || err.message);
     throw err;
   }
 }
@@ -175,20 +158,22 @@ export async function getJob(jobId) {
  * Fetch job result (job must be completed)
  */
 export async function getJobResult(jobId) {
-  if (!jobId) {
-    throw new Error("jobId is required");
-  }
+  if (!jobId) throw new Error("jobId is required");
 
   try {
     const res = await api.get(`/api/jobs/${jobId}/result`);
     return normalizeJobResult(res.data);
   } catch (err) {
-    console.error(
-      "[API] getJobResult error:",
-      err.response?.data || err.message
-    );
+    console.error("[API] getJobResult error:", err.response?.data || err.message);
     throw err;
   }
+}
+
+/**
+ * Fetch specific artifact (overlay/mask) URL
+ */
+export function getArtifactUrl(jobId, name) {
+  return `${BASE_URL}/api/jobs/${jobId}/artifacts/${name}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -198,38 +183,26 @@ export async function getJobResult(jobId) {
 /**
  * Poll job until completion or failure
  */
-export async function waitForJob(
-  jobId,
-  {
-    interval = 2000,
-    timeout = 120000,
-    onProgress = null,
-  } = {}
-) {
+export async function waitForJob(jobId, { interval = 2000, timeout = 120000, onProgress = null } = {}) {
   const start = Date.now();
 
   while (true) {
     const job = await getJob(jobId);
 
-    if (onProgress) {
-      onProgress(job);
-    }
+    if (onProgress) onProgress(job);
 
     if (job.status === "failed") {
       throw new Error(job.error || "Job failed");
     }
 
     if (job.status === "completed") {
-      if (!job.hasResult) {
-        throw new Error("Job completed but no result found");
-      }
+      if (!job.hasResult) throw new Error("Job completed but no result found");
+
       const result = await getJobResult(jobId);
       return { job, result };
     }
 
-    if (Date.now() - start > timeout) {
-      throw new Error("Job polling timeout");
-    }
+    if (Date.now() - start > timeout) throw new Error("Job polling timeout");
 
     await new Promise((r) => setTimeout(r, interval));
   }

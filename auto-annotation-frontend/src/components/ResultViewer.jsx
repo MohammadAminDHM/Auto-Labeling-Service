@@ -4,7 +4,7 @@ import BoundingBoxOverlay from "./BoundingBoxOverlay";
 import ResultJSON from "./ResultJSON";
 
 export default function ResultViewer({ result }) {
-  if (!result?.image_url) {
+  if (!result?.imageUrl) {
     return <div className="text-gray-500">No visualization available</div>;
   }
 
@@ -17,7 +17,7 @@ export default function ResultViewer({ result }) {
     <div className="space-y-6">
       <div className="relative inline-block border rounded shadow-sm">
         <img
-          src={result.image_url}
+          src={result.imageUrl}
           alt="Inference result"
           className="max-w-full block"
         />
@@ -30,7 +30,6 @@ export default function ResultViewer({ result }) {
           />
         )}
 
-        {/* Placeholder for polygons (extend with canvas/SVG for production) */}
         {hasPolygons && (
           <div className="absolute inset-0 pointer-events-none bg-red-500/20">
             Polygons detected - Implement custom overlay

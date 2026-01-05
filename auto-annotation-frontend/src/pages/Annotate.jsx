@@ -11,22 +11,14 @@ export default function Annotate() {
 
   return (
     <div className="max-w-5xl mx-auto p-6">
-      <h2 className="text-2xl font-bold mb-6">
-        Annotation Workspace
-      </h2>
+      <h2 className="text-2xl font-bold mb-6">Annotation Workspace</h2>
 
       {/* Error */}
-      {error && (
-        <p className="text-red-500 mb-4">
-          {error}
-        </p>
-      )}
+      {error && <p className="text-red-500 mb-4">{error}</p>}
 
       {/* Loading */}
-      {status === "loading" && (
-        <p className="text-gray-600">
-          Processing image and running annotation…
-        </p>
+      {status === "running" && (
+        <p className="text-gray-600">Processing file and running annotation…</p>
       )}
 
       {/* Completed */}
@@ -37,7 +29,7 @@ export default function Annotate() {
         </div>
       )}
 
-      {/* Completed but no result (should not happen, but safe) */}
+      {/* Completed but no result */}
       {status === "completed" && !result && (
         <p className="text-yellow-600">
           Job completed, but no result was returned.
@@ -45,10 +37,8 @@ export default function Annotate() {
       )}
 
       {/* Idle fallback */}
-      {!job && status !== "loading" && !error && (
-        <p className="text-gray-500">
-          Waiting for job data…
-        </p>
+      {!job && status !== "running" && !error && (
+        <p className="text-gray-500">Waiting for job data…</p>
       )}
     </div>
   );
