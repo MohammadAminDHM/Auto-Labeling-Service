@@ -72,11 +72,22 @@ async def create_job(
     return {"job_id": job["id"]}
 
 
+
+ARTIFACT_ROOT = Path("job_artifacts")
+router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
+
+
 @router.get("/{job_id}")
 def read_job(job_id: str):
     job = get_job(job_id)
     if not job:
         raise HTTPException(404, detail="Job not found")
+
+    job_dir = ARTIFACT_ROOT / job_id
+    existing_artifacts = []
+    for name in ["overlay", "mask"]:
+        if (job_dir / f"{name}.png").exists():
+            existing_artifacts.append(name)
 
     return {
         "id": job["id"],
@@ -84,7 +95,9 @@ def read_job(job_id: str):
         "progress": job["progress"],
         "error": job["error"],
         "has_result": job["status"] == "completed",
+        "artifacts": existing_artifacts,
     }
+
 
 
 @router.get("/{job_id}/result")
@@ -109,6 +122,5 @@ def get_job_result(job_id: str):
 def get_artifact(job_id: str, name: str):
     path = ARTIFACT_ROOT / job_id / f"{name}.png"
     if not path.exists():
-        raise HTTPException(404, detail="Artifact not found")
-
+        raise HTTPException(404, detail=f"{name} artifact not found")
     return FileResponse(path, media_type="image/png")

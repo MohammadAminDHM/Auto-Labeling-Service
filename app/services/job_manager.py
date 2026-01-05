@@ -34,6 +34,7 @@ def save_result(job_id: str, result: dict):
     job_store[job_id]["result"] = result
     job_store[job_id]["status"] = "completed"
     job_store[job_id]["progress"] = 100
+    job_store[job_id]["artifacts"] = result.get("artifacts", [])
 
 
 def mark_failed(job_id: str, error: str):

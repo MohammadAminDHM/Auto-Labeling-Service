@@ -1,39 +1,40 @@
 # app/services/result_serializer.py
 import base64
 
-
-def normalize_result(result: dict, task: str, model: str, image_bytes: bytes | None):
+def normalize_result(result: dict, task: str, model: str, image_bytes: bytes | None = None, mask_bytes: bytes | None = None):
+    """
+    Converts Florence raw output into a unified format for all tasks.
+    """
     normalized = {
         "ok": True,
         "task": task,
         "model": model,
-        "image_bytes": base64.b64encode(image_bytes).decode()
-        if image_bytes
-        else None,
+        "image_bytes": base64.b64encode(image_bytes).decode() if image_bytes else None,
+        "mask_bytes": base64.b64encode(mask_bytes).decode() if mask_bytes else None,
         "results": {},
+        "artifacts": [],
     }
+
+    if image_bytes:
+        normalized["artifacts"].append("overlay")
+    if mask_bytes:
+        normalized["artifacts"].append("mask")
 
     if not result:
         return normalized
 
-    task = task.lower()
+    task_lower = task.lower()
 
-    if task in {
-        "detection",
-        "object_detection",
-        "open_vocab_detection",
-        "open_vocabulary_detection",
-    }:
+    # Detection tasks
+    if task_lower in {"detection", "object_detection", "open_vocab_detection", "open_vocabulary_detection"}:
         normalized["results"] = {
             "bboxes": result.get("bboxes", []),
             "labels": result.get("labels", []),
             "scores": result.get("scores", []),
         }
 
-    elif task in {
-        "region_segmentation",
-        "region_to_segmentation",
-    }:
+    # Segmentation tasks
+    elif task_lower in {"region_segmentation", "region_to_segmentation"}:
         normalized["results"] = {
             "polygons": result.get("polygons", []),
             "labels": result.get("labels", []),
@@ -41,6 +42,7 @@ def normalize_result(result: dict, task: str, model: str, image_bytes: bytes | N
             "masks": result.get("masks", {}),
         }
 
+    # All other tasks
     else:
         normalized["results"] = result
 
