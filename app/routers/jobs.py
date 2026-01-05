@@ -1,96 +1,114 @@
 # app/routers/jobs.py
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
+from pathlib import Path
+
 from app.services.job_runner import submit_job
 from app.services.job_manager import get_job
-from app.services.result_serializer import normalize_result
-from inference.registry.model_registry import ModelRegistry, TaskType, ModelType, TASK_INPUTS  # TASK_INPUTS imported
+from inference.registry.model_registry import (
+    ModelRegistry,
+    TaskType,
+    ModelType,
+    TASK_INPUTS,
+)
+
+ARTIFACT_ROOT = Path("job_artifacts")
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
-# Moved static /tasks before dynamic /{job_id}
+
 @router.get("/tasks")
 def get_available_tasks(model: str = "florence"):
-    model_lower = model.lower()  # Normalize
     try:
-        model_enum = ModelType(model_lower)
+        model_enum = ModelType(model.lower())
     except ValueError:
         raise HTTPException(400, detail="Invalid model")
+
     registry = ModelRegistry()
-    tasks = [t.value for t in TaskType if t in registry.adapters[model_enum].supported_tasks()]  # lowercase values
-    required_inputs = {t: TASK_INPUTS.get(TaskType(t.upper()), []) for t in tasks}  # map back via upper name
-    return {"tasks": tasks, "required_inputs": required_inputs}
+    supported = registry.adapters[model_enum].supported_tasks()
+
+    return {
+        "tasks": [t.value for t in supported],
+        "required_inputs": {
+            t.value: TASK_INPUTS.get(t, []) for t in supported
+        },
+    }
+
 
 @router.post("")
-async def create_job_endpoint(
+async def create_job(
     file: UploadFile = File(...),
     task: str = Form(...),
     model: str = Form(...),
     text_input: str | None = Form(None),
 ):
-    # Normalize inputs to lowercase (frontend sends lowercase)
-    task_lower = task.lower()
-    model_lower = model.lower()
-
-    # Find matching TaskType by value (case-sensitive, values are lowercase)
-    matching_task = None
-    for t in TaskType:
-        if t.value == task_lower:
-            matching_task = t
-            break
-    if matching_task is None:
-        print(f"[API] Validation error: No TaskType with value '{task_lower}'")
-        raise HTTPException(400, detail=f"Invalid task: {task}")
-
-    # Model validation (ModelType values are lowercase)
     try:
-        model_enum = ModelType(model_lower)
+        task_enum = TaskType(task.lower())
+        model_enum = ModelType(model.lower())
     except ValueError:
-        print(f"[API] Validation error: Invalid model '{model_lower}'")
-        raise HTTPException(400, detail=f"Invalid model: {model}")
+        raise HTTPException(400, detail="Invalid task or model")
 
     registry = ModelRegistry()
-    allowed_models, required_args = registry.get_task_config(matching_task)
+    allowed_models, required_args = registry.get_task_config(task_enum)
+
     if model_enum not in allowed_models:
-        raise HTTPException(400, detail=f"Model {model} not supported for task {task}")
+        raise HTTPException(400, detail="Model not supported for task")
+
     if "text_input" in required_args and not text_input:
-        raise HTTPException(400, detail=f"text_input required for task {task}")
+        raise HTTPException(400, detail="text_input is required")
 
     image_bytes = await file.read()
+
     job = submit_job(
-        task=task_lower,  # Store lowercase (consistent with frontend)
+        task=task_enum.value,
+        model=model_enum.value,
         image_bytes=image_bytes,
-        model=model_lower,
-        params={"text_input": text_input, "visualize": True},
+        params={
+            "text_input": text_input,
+            "visualize": True,
+        },
     )
-    print(f"[API] Job submitted {job['id']} for task '{task_lower}' model '{model_lower}'")  # Enhanced log
+
     return {"job_id": job["id"]}
+
 
 @router.get("/{job_id}")
 def read_job(job_id: str):
     job = get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    print(f"[API] Job {job_id} status: {job['status']}")
+        raise HTTPException(404, detail="Job not found")
+
     return {
         "id": job["id"],
         "status": job["status"],
         "progress": job["progress"],
         "error": job["error"],
-        "has_result": job["result"] is not None,
+        "has_result": job["status"] == "completed",
     }
 
+
 @router.get("/{job_id}/result")
-def get_job_result_endpoint(job_id: str):
+def get_job_result(job_id: str):
     job = get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job["status"] != "completed":
-        raise HTTPException(status_code=400, detail="Job not completed")
-    normalized = normalize_result(
-        result=job["result"],
-        task=job["task"],
-        model=job["model"],
-        image_bytes=job.get("image_bytes")
-    )
-    print(f"[API] Job {job_id} result fetched")  # Added log
-    return normalized
+    if not job or job["status"] != "completed":
+        raise HTTPException(400, detail="Job not completed")
+
+    return {
+        "job_id": job["id"],
+        "task": job["task"],
+        "model": job["model"],
+        "annotations": job["result"],
+        "artifacts": {
+            "overlay": f"/api/jobs/{job_id}/artifacts/overlay",
+            "mask": f"/api/jobs/{job_id}/artifacts/mask",
+        },
+    }
+
+
+@router.get("/{job_id}/artifacts/{name}")
+def get_artifact(job_id: str, name: str):
+    path = ARTIFACT_ROOT / job_id / f"{name}.png"
+    if not path.exists():
+        raise HTTPException(404, detail="Artifact not found")
+
+    return FileResponse(path, media_type="image/png")
