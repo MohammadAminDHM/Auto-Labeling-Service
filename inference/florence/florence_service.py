@@ -191,12 +191,16 @@ class Florence2InferenceService:
             results = self.run_example(key, image, text_input)
 
         elif task_name == 'OCR':
-            results = self.run_example('<OCR>', image)
+            raw_results = self.run_example('<OCR>', image)
+            results = {'<OCR>': raw_results if isinstance(raw_results, dict) else {"text": raw_results}}  # Fixed: Ensure dict with text
+
         elif task_name == 'OCR with Region':
             results = self.run_example('<OCR_WITH_REGION>', image)
 
         else:
             raise ValueError(f"Unknown task: {task_name}")
+
+        print(f"[FlorenceService] Task {task_name} results: {results}")  # Added log for debugging
 
         # Visualization
         # -----------------------------

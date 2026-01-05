@@ -56,11 +56,24 @@ function normalizeJobResult(result) {
 /* ------------------------------------------------------------------ */
 
 /**
+ * Get available tasks for a model
+ */
+export async function getAvailableTasks(model = "florence") {
+  try {
+    const res = await api.get(`/api/jobs/tasks?model=${model.toLowerCase()}`);
+    return res.data;  // {tasks: [...], required_inputs: {...}}
+  } catch (err) {
+    console.error("[API] getAvailableTasks error:", err.response?.data || err.message);
+    throw err;
+  }
+}
+
+/**
  * Submit a new job
  * Backend expects:
  * - file (binary)
- * - task (string)
- * - model (string)
+ * - task (string, lowercase)
+ * - model (string, lowercase)
  * - text_input (optional string)
  */
 export async function submitJob(
@@ -75,8 +88,8 @@ export async function submitJob(
 
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("task", task);
-  formData.append("model", model);
+  formData.append("task", task.toLowerCase());
+  formData.append("model", model.toLowerCase());
 
   if (textInput) {
     formData.append("text_input", textInput);
@@ -95,7 +108,7 @@ export async function submitJob(
     console.info("[API] Job submitted:", normalized.jobId);
     return normalized; // { jobId }
   } catch (err) {
-    console.error("[API] submitJob error:", err.response?.data || err);
+    console.error("[API] submitJob error:", err.response?.data || err.message);
     throw err;
   }
 }
@@ -137,6 +150,7 @@ export async function waitForJob(
     const poll = async () => {
       try {
         const job = await getJob(jobId);
+        console.log("[API] Poll job status:", job);
 
         if (job.status === "failed") {
           return reject(new Error(job.error || "Job failed"));
@@ -148,6 +162,7 @@ export async function waitForJob(
           }
 
           const result = await getJobResult(jobId);
+          console.log("[API] Poll job result:", result);
           return resolve({
             job,
             result,
@@ -160,6 +175,7 @@ export async function waitForJob(
 
         setTimeout(poll, interval);
       } catch (err) {
+        console.error("[API] Poll error:", err.response?.data || err.message);
         reject(err);
       }
     };

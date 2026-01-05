@@ -8,12 +8,13 @@ export default function ResultViewer({ result }) {
     return <div className="text-gray-500">No visualization available</div>;
   }
 
-  const { task, outputs } = result;
-  const hasBBoxes = outputs?.bboxes && outputs.bboxes.length > 0;
+  const { task, results } = result;
+  const hasBBoxes = results?.bboxes?.length > 0;
+  const hasPolygons = results?.polygons?.length > 0;
+  const hasText = results?.text;
 
   return (
     <div className="space-y-6">
-      {/* Image + overlays */}
       <div className="relative inline-block border rounded shadow-sm">
         <img
           src={result.image_url}
@@ -21,23 +22,28 @@ export default function ResultViewer({ result }) {
           className="max-w-full block"
         />
 
-        {(task === "detection" || task === "open_vocab_detection") && hasBBoxes && (
+        {hasBBoxes && (
           <BoundingBoxOverlay
-            bboxes={outputs.bboxes}
-            labels={outputs.labels}
-            scores={outputs.scores}
+            bboxes={results.bboxes}
+            labels={results.labels}
+            scores={results.scores}
           />
         )}
 
-        {/* Segmentation overlay placeholder (future) */}
-        {task === "region_segmentation" && (
-          <div className="absolute inset-0 pointer-events-none">
-            {/* segmentation overlays will go here */}
+        {/* Placeholder for polygons (extend with canvas/SVG for production) */}
+        {hasPolygons && (
+          <div className="absolute inset-0 pointer-events-none bg-red-500/20">
+            Polygons detected - Implement custom overlay
+          </div>
+        )}
+
+        {hasText && (
+          <div className="absolute bottom-0 left-0 bg-black/50 text-white p-2">
+            {hasText}
           </div>
         )}
       </div>
 
-      {/* Structured JSON output */}
       <ResultJSON data={result} />
     </div>
   );

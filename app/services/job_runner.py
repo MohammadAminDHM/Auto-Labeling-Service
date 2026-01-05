@@ -2,6 +2,9 @@
 import threading
 import traceback
 from .job_manager import create_job, save_result
+from inference.registry.model_registry import ModelRegistry  # Added for real inference
+from inference.registry.task_types import TaskType  # Added
+from inference.registry.model_types import ModelType  # Added
 
 def submit_job(task: str, image_bytes: bytes, model: str | None, params: dict):
     """
@@ -21,33 +24,16 @@ def submit_job(task: str, image_bytes: bytes, model: str | None, params: dict):
 def run_job(job):
     print(f"[JobRunner] Running job {job['id']} task '{job['task']}' with model '{job['model']}'")
     try:
-        # Simulate model prediction
-        task = job["task"].lower()
-
-        if task in ["detection", "object_detection", "open_vocab_detection", "open_vocabulary_detection"]:
-            result = {
-                "bboxes": [[10, 10, 100, 100]],  # mock example
-                "labels": ["example_label"],
-                "scores": [0.95],
-                "image_bytes": job.get("image_bytes")
-            }
-        elif task in ["region_segmentation", "region_to_segmentation"]:
-            result = {
-                "polygons": [[[10, 10], [50, 10], [50, 50], [10, 50]]],
-                "labels": ["example_segment"],
-                "bboxes": [[10, 10, 50, 50]],
-                "masks": {},  # optional
-                "image_bytes": job.get("image_bytes")
-            }
-        else:
-            result = {
-                "output": "task not implemented",
-                "image_bytes": job.get("image_bytes")
-            }
-
+        registry = ModelRegistry()
+        result = registry.run(
+            task=TaskType(job["task"].upper()),  # Convert to enum (assuming tasks are lowercase in input)
+            image_bytes=job["image_bytes"],
+            model=ModelType(job["model"].upper()),  # Convert to enum
+            **job["params"]  # e.g., text_input, visualize
+        )
+        print(f"[JobRunner] Inference result: {result}")  # Added log for debugging
         save_result(job["id"], result)
         print(f"[JobRunner] Job {job['id']} completed successfully")
-
     except Exception as e:
         job["status"] = "failed"
         job["error"] = str(e)

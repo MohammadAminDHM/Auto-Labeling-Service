@@ -7,16 +7,6 @@ import ResultJSON from "../components/ResultJSON";
 
 export default function Annotate() {
   const { jobId } = useParams();
-
-  /**
-   * useJobPoll MUST now return:
-   * {
-   *   job: JobStatus | null,
-   *   result: JobResult | null,
-   *   status: "loading" | "completed" | "failed",
-   *   error: string | null
-   * }
-   */
   const { job, result, status, error } = useJobPoll(jobId);
 
   return (
@@ -43,7 +33,7 @@ export default function Annotate() {
       {status === "completed" && result && (
         <div className="space-y-6">
           <ResultViewer result={result} />
-          <ResultJSON result={result} />
+          <ResultJSON data={result} />
         </div>
       )}
 

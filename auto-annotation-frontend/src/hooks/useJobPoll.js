@@ -1,79 +1,36 @@
 // src/hooks/useJobPoll.js
-import { useEffect, useRef, useState } from "react";
-import { getJob } from "../services/api";
+import { useState, useEffect } from 'react';
+import { waitForJob } from '../services/api';
 
-/**
- * Poll backend for job lifecycle and final result
- *
- * Returns a stable contract:
- * {
- *   job: Job | null,
- *   result: object | null,
- *   status: "idle" | "loading" | "completed" | "failed",
- *   error: string | null
- * }
- */
-export default function useJobPoll(jobId, { interval = 2000 } = {}) {
+const useJobPoll = (jobId) => {
   const [job, setJob] = useState(null);
   const [result, setResult] = useState(null);
-  const [status, setStatus] = useState("idle");
+  const [status, setStatus] = useState('loading');
   const [error, setError] = useState(null);
 
-  const timerRef = useRef(null);
-  const mountedRef = useRef(false);
-
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId) {
+      setError('No job ID provided');
+      setStatus('failed');
+      return;
+    }
 
-    mountedRef.current = true;
-    setStatus("loading");
-    setError(null);
-    setJob(null);
-    setResult(null);
-
-    const poll = async () => {
+    const pollJob = async () => {
       try {
-        const data = await getJob(jobId);
-        if (!mountedRef.current) return;
-
-        setJob(data);
-
-        // ---- terminal states ----
-        if (data.status === "completed") {
-          setStatus("completed");
-          setResult(data.result || null);
-          clearInterval(timerRef.current);
-          return;
-        }
-
-        if (data.status === "failed") {
-          setStatus("failed");
-          setError("Job failed on server");
-          clearInterval(timerRef.current);
-          return;
-        }
-
-        // ---- still running ----
-        setStatus("loading");
+        const { job: polledJob, result: polledResult } = await waitForJob(jobId);
+        setJob(polledJob);
+        setResult(polledResult);
+        setStatus('completed');
       } catch (err) {
-        if (!mountedRef.current) return;
-
-        console.error("[useJobPoll] polling error:", err);
-        setStatus("failed");
-        setError("Failed to fetch job status");
-        clearInterval(timerRef.current);
+        setError(err.message);
+        setStatus('failed');
       }
     };
 
-    // initial fetch + polling
-    poll();
-    timerRef.current = setInterval(poll, interval);
-
-    return () => {
-      mountedRef.current = false;
-      clearInterval(timerRef.current);
-    };
-  }, [jobId, interval]);
+    pollJob();
+  }, [jobId]);
 
   return { job, result, status, error };
-}
+};
+
+export default useJobPoll;

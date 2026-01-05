@@ -6,7 +6,14 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "./styles/tailwind.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,  // Retry failed queries
+      staleTime: 1000 * 60,  // 1 minute
+    },
+  },
+});
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
