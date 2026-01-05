@@ -72,22 +72,18 @@ async def create_job(
     return {"job_id": job["id"]}
 
 
-
-ARTIFACT_ROOT = Path("job_artifacts")
-router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
-
-
 @router.get("/{job_id}")
 def read_job(job_id: str):
     job = get_job(job_id)
     if not job:
         raise HTTPException(404, detail="Job not found")
 
+    # Include artifact info dynamically
     job_dir = ARTIFACT_ROOT / job_id
-    existing_artifacts = []
+    artifacts = []
     for name in ["overlay", "mask"]:
         if (job_dir / f"{name}.png").exists():
-            existing_artifacts.append(name)
+            artifacts.append(name)
 
     return {
         "id": job["id"],
@@ -95,9 +91,8 @@ def read_job(job_id: str):
         "progress": job["progress"],
         "error": job["error"],
         "has_result": job["status"] == "completed",
-        "artifacts": existing_artifacts,
+        "artifacts": artifacts,
     }
-
 
 
 @router.get("/{job_id}/result")
@@ -106,15 +101,19 @@ def get_job_result(job_id: str):
     if not job or job["status"] != "completed":
         raise HTTPException(400, detail="Job not completed")
 
+    # Check which artifacts actually exist
+    job_dir = ARTIFACT_ROOT / job_id
+    artifacts = {}
+    for name in ["overlay", "mask"]:
+        if (job_dir / f"{name}.png").exists():
+            artifacts[name] = f"/api/jobs/{job_id}/artifacts/{name}"
+
     return {
         "job_id": job["id"],
         "task": job["task"],
         "model": job["model"],
         "annotations": job["result"],
-        "artifacts": {
-            "overlay": f"/api/jobs/{job_id}/artifacts/overlay",
-            "mask": f"/api/jobs/{job_id}/artifacts/mask",
-        },
+        "artifacts": artifacts,
     }
 
 
