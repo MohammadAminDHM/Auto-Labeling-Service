@@ -1,41 +1,66 @@
 # app/services/job_runner.py
 import threading
 import traceback
-from .job_manager import create_job, save_result
-from inference.registry.model_registry import ModelRegistry  # Added for real inference
-from inference.registry.task_types import TaskType  # Added
-from inference.registry.model_types import ModelType  # Added
+from pathlib import Path
 
-def submit_job(task: str, image_bytes: bytes, model: str | None, params: dict):
-    """
-    Creates a job and starts background execution in a thread.
-    """
-    job = create_job(task=task, model=model, params=params)
-    job["image_bytes"] = image_bytes
+from app.services.job_manager import (
+    create_job,
+    save_result,
+    mark_running,
+    mark_failed,
+)
+from inference.registry.model_registry import ModelRegistry
+from inference.registry.task_types import TaskType
+from inference.registry.model_types import ModelType
+
+ARTIFACT_ROOT = Path("job_artifacts")
+
+
+def submit_job(task: str, model: str, image_bytes: bytes, params: dict):
+    job = create_job(task, model, params)
+
+    ARTIFACT_ROOT.mkdir(exist_ok=True)
+    job_dir = ARTIFACT_ROOT / job["id"]
+    job_dir.mkdir(exist_ok=True)
+
+    (job_dir / "original.png").write_bytes(image_bytes)
 
     thread = threading.Thread(
         target=run_job,
-        args=(job,),
+        args=(job["id"], image_bytes),
         daemon=True,
     )
     thread.start()
+
     return job
 
-def run_job(job):
-    print(f"[JobRunner] Running job {job['id']} task '{job['task']}' with model '{job['model']}'")
+
+def run_job(job_id: str, image_bytes: bytes):
+    from app.services.job_manager import get_job
+
+    job = get_job(job_id)
+    if not job:
+        return
+
     try:
+        mark_running(job_id)
+
         registry = ModelRegistry()
-        result = registry.run(
-            task=TaskType(job["task"].upper()),  # Convert to enum (assuming tasks are lowercase in input)
-            image_bytes=job["image_bytes"],
-            model=ModelType(job["model"].upper()),  # Convert to enum
-            **job["params"]  # e.g., text_input, visualize
+        annotations, overlay, mask = registry.run(
+            task=TaskType(job["task"]),
+            model=ModelType(job["model"]),
+            image_bytes=image_bytes,
+            **job["params"],
         )
-        print(f"[JobRunner] Inference result: {result}")  # Added log for debugging
-        save_result(job["id"], result)
-        print(f"[JobRunner] Job {job['id']} completed successfully")
+
+        job_dir = ARTIFACT_ROOT / job_id
+        if overlay:
+            (job_dir / "overlay.png").write_bytes(overlay)
+        if mask:
+            (job_dir / "mask.png").write_bytes(mask)
+
+        save_result(job_id, annotations)
+
     except Exception as e:
-        job["status"] = "failed"
-        job["error"] = str(e)
-        job["traceback"] = traceback.format_exc()
-        print(f"[JobRunner] Job {job['id']} failed: {e}")
+        mark_failed(job_id, str(e))
+        traceback.print_exc()
