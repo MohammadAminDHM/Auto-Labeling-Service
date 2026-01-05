@@ -1,51 +1,97 @@
 // src/services/api.js
 import axios from "axios";
 
-const BASE = import.meta.env.VITE_API_BASE || "http://localhost:6996";
+/* ------------------------------------------------------------------ */
+/* Axios instance                                                     */
+/* ------------------------------------------------------------------ */
+
+const BASE_URL =
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ||
+  "http://localhost:6996";
 
 const api = axios.create({
-  baseURL: BASE,
+  baseURL: BASE_URL,
   timeout: 120000,
 });
 
 /* ------------------------------------------------------------------ */
-/* Helpers                                                            */
+/* Normalization helpers                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Normalize submit response
+ * Backend guarantees: { job_id }
+ */
 function normalizeSubmitResponse(data) {
-  if (!data) return null;
+  if (!data) {
+    throw new Error("Empty submit response");
+  }
 
-  if (data.job_id) return { jobId: data.job_id };
+  if (data.job_id) {
+    return { jobId: data.job_id };
+  }
+
+  // backward compatibility / defensive
   if (data.id) return { jobId: data.id };
   if (data.job?.id) return { jobId: data.job.id };
 
   console.error("[API] Unknown submit response shape:", data);
-  return null;
+  throw new Error("Invalid submit response format");
 }
 
-function normalizeJobStatus(job) {
-  if (!job) return null;
+/**
+ * Normalize job metadata
+ */
+function normalizeJob(job) {
+  if (!job) {
+    throw new Error("Empty job payload");
+  }
 
-  let status = job.status;
-  if (status === "done") status = "completed";
-  if (status === "error") status = "failed";
+  const status = job.status;
+
+  if (!["queued", "running", "completed", "failed"].includes(status)) {
+    console.warn("[API] Unknown job status:", status);
+  }
 
   return {
     id: job.id,
     status,
     progress: job.progress ?? 0,
     error: job.error ?? null,
-    has_result: Boolean(job.has_result),
+    hasResult: Boolean(job.has_result),
+    createdAt: job.created_at ?? null,
+    updatedAt: job.updated_at ?? null,
   };
 }
 
+/**
+ * Normalize job result payload
+ *
+ * Standard backend contract:
+ * {
+ *   ok: boolean
+ *   task: string
+ *   model: string
+ *   results: object
+ *   image_bytes?: base64
+ * }
+ */
 function normalizeJobResult(result) {
-  if (!result) return null;
+  if (!result) {
+    throw new Error("Empty job result");
+  }
 
-  const normalized = { ...result };
+  const normalized = {
+    ok: Boolean(result.ok),
+    task: result.task ?? null,
+    model: result.model ?? null,
+    results: result.results ?? {},
+    imageUrl: null,
+    raw: result, // keep raw for debugging / advanced UI
+  };
 
   if (result.image_bytes) {
-    normalized.image_url = `data:image/png;base64,${result.image_bytes}`;
+    normalized.imageUrl = `data:image/png;base64,${result.image_bytes}`;
   }
 
   return normalized;
@@ -56,32 +102,27 @@ function normalizeJobResult(result) {
 /* ------------------------------------------------------------------ */
 
 /**
- * Get available tasks for a model
+ * Fetch available tasks for a given model
  */
 export async function getAvailableTasks(model = "florence") {
   try {
-    const res = await api.get(`/api/jobs/tasks?model=${model.toLowerCase()}`);
-    return res.data;  // {tasks: [...], required_inputs: {...}}
+    const res = await api.get("/api/jobs/tasks", {
+      params: { model: model.toLowerCase() },
+    });
+    return res.data; // { tasks, required_inputs }
   } catch (err) {
-    console.error("[API] getAvailableTasks error:", err.response?.data || err.message);
+    console.error(
+      "[API] getAvailableTasks error:",
+      err.response?.data || err.message
+    );
     throw err;
   }
 }
 
 /**
- * Submit a new job
- * Backend expects:
- * - file (binary)
- * - task (string, lowercase)
- * - model (string, lowercase)
- * - text_input (optional string)
+ * Submit a new inference job
  */
-export async function submitJob(
-  file,
-  task,
-  model,
-  textInput = ""
-) {
+export async function submitJob(file, task, model, textInput = "") {
   if (!file || !task || !model) {
     throw new Error("file, task, and model are required");
   }
@@ -100,88 +141,98 @@ export async function submitJob(
       headers: { "Content-Type": "multipart/form-data" },
     });
 
-    const normalized = normalizeSubmitResponse(res.data);
-    if (!normalized?.jobId) {
-      throw new Error("Invalid submit response");
-    }
-
-    console.info("[API] Job submitted:", normalized.jobId);
-    return normalized; // { jobId }
+    return normalizeSubmitResponse(res.data);
   } catch (err) {
-    console.error("[API] submitJob error:", err.response?.data || err.message);
+    console.error(
+      "[API] submitJob error:",
+      err.response?.data || err.message
+    );
     throw err;
   }
 }
 
 /**
- * Get job metadata / status
+ * Fetch job metadata
  */
 export async function getJob(jobId) {
-  if (!jobId) throw new Error("jobId is required");
+  if (!jobId) {
+    throw new Error("jobId is required");
+  }
 
-  const res = await api.get(`/api/jobs/${jobId}`);
-  return normalizeJobStatus(res.data);
+  try {
+    const res = await api.get(`/api/jobs/${jobId}`);
+    return normalizeJob(res.data);
+  } catch (err) {
+    console.error(
+      "[API] getJob error:",
+      err.response?.data || err.message
+    );
+    throw err;
+  }
 }
 
 /**
- * Get final job result
- * Only call when has_result === true
+ * Fetch job result (job must be completed)
  */
 export async function getJobResult(jobId) {
-  if (!jobId) throw new Error("jobId is required");
+  if (!jobId) {
+    throw new Error("jobId is required");
+  }
 
-  const res = await api.get(`/api/jobs/${jobId}/result`);
-  return normalizeJobResult(res.data);
+  try {
+    const res = await api.get(`/api/jobs/${jobId}/result`);
+    return normalizeJobResult(res.data);
+  } catch (err) {
+    console.error(
+      "[API] getJobResult error:",
+      err.response?.data || err.message
+    );
+    throw err;
+  }
 }
 
+/* ------------------------------------------------------------------ */
+/* Polling                                                            */
+/* ------------------------------------------------------------------ */
+
 /**
- * Poll job until completion, then fetch result
+ * Poll job until completion or failure
  */
 export async function waitForJob(
   jobId,
   {
     interval = 2000,
     timeout = 120000,
+    onProgress = null,
   } = {}
 ) {
   const start = Date.now();
 
-  return new Promise((resolve, reject) => {
-    const poll = async () => {
-      try {
-        const job = await getJob(jobId);
-        console.log("[API] Poll job status:", job);
+  while (true) {
+    const job = await getJob(jobId);
 
-        if (job.status === "failed") {
-          return reject(new Error(job.error || "Job failed"));
-        }
+    if (onProgress) {
+      onProgress(job);
+    }
 
-        if (job.status === "completed") {
-          if (!job.has_result) {
-            return reject(new Error("Job completed but no result found"));
-          }
+    if (job.status === "failed") {
+      throw new Error(job.error || "Job failed");
+    }
 
-          const result = await getJobResult(jobId);
-          console.log("[API] Poll job result:", result);
-          return resolve({
-            job,
-            result,
-          });
-        }
-
-        if (Date.now() - start > timeout) {
-          return reject(new Error("Job polling timeout"));
-        }
-
-        setTimeout(poll, interval);
-      } catch (err) {
-        console.error("[API] Poll error:", err.response?.data || err.message);
-        reject(err);
+    if (job.status === "completed") {
+      if (!job.hasResult) {
+        throw new Error("Job completed but no result found");
       }
-    };
+      const result = await getJobResult(jobId);
+      return { job, result };
+    }
 
-    poll();
-  });
+    if (Date.now() - start > timeout) {
+      throw new Error("Job polling timeout");
+    }
+
+    await new Promise((r) => setTimeout(r, interval));
+  }
 }
 
 export default api;

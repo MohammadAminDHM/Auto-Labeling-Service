@@ -1,36 +1,65 @@
 // src/hooks/useJobPoll.js
-import { useState, useEffect } from 'react';
-import { waitForJob } from '../services/api';
+import { useEffect, useRef, useState } from "react";
+import { waitForJob } from "../services/api";
 
-const useJobPoll = (jobId) => {
+const useJobPoll = (jobId, options = {}) => {
   const [job, setJob] = useState(null);
   const [result, setResult] = useState(null);
-  const [status, setStatus] = useState('loading');
+  const [status, setStatus] = useState("idle"); // idle | running | completed | failed
   const [error, setError] = useState(null);
+
+  const cancelRef = useRef(false);
 
   useEffect(() => {
     if (!jobId) {
-      setError('No job ID provided');
-      setStatus('failed');
+      setJob(null);
+      setResult(null);
+      setStatus("idle");
+      setError(null);
       return;
     }
 
-    const pollJob = async () => {
-      try {
-        const { job: polledJob, result: polledResult } = await waitForJob(jobId);
-        setJob(polledJob);
-        setResult(polledResult);
-        setStatus('completed');
-      } catch (err) {
-        setError(err.message);
-        setStatus('failed');
-      }
-    };
+    cancelRef.current = false;
+    setStatus("running");
+    setError(null);
+    setResult(null);
 
-    pollJob();
+    waitForJob(jobId, {
+      ...options,
+      onProgress: (jobMeta) => {
+        if (!cancelRef.current) {
+          setJob(jobMeta);
+        }
+      },
+    })
+      .then(({ job, result }) => {
+        if (!cancelRef.current) {
+          setJob(job);
+          setResult(result);
+          setStatus("completed");
+        }
+      })
+      .catch((err) => {
+        if (!cancelRef.current) {
+          setError(err.message || "Job failed");
+          setStatus("failed");
+        }
+      });
+
+    return () => {
+      cancelRef.current = true;
+    };
   }, [jobId]);
 
-  return { job, result, status, error };
+  return {
+    job,
+    result,
+    status,
+    error,
+    isRunning: status === "running",
+    isCompleted: status === "completed",
+    isFailed: status === "failed",
+  };
 };
 
 export default useJobPoll;
