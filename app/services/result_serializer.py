@@ -42,6 +42,12 @@ def normalize_result(result: dict, task: str, model: str, image_bytes: bytes | N
             "masks": result.get("masks", {}),
         }
 
+    elif task_lower in {"region_category", "region_proposal"}:
+        # No image output by default
+        normalized["results"] = result["results"]
+        normalized["artifacts"] = []  # ensure no overlay/mask
+
+
     # All other tasks
     else:
         normalized["results"] = result
