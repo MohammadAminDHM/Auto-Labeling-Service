@@ -1,8 +1,7 @@
-// src/pages/Upload.jsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import UploadZone from "../components/UploadZone";
-import { submitJob, getAvailableTasks } from "../services/api";
+import { getAvailableTasks, submitJob } from "../services/api";
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -10,91 +9,84 @@ export default function Upload() {
   const [model, setModel] = useState("florence");
   const [availableModels] = useState(["florence", "rexomni"]);
 
+  const [tasks, setTasks] = useState([]);
+  const [requiredInputs, setRequiredInputs] = useState({});
   const [task, setTask] = useState("");
-  const [availableTasks, setAvailableTasks] = useState([]);
 
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [file, setFile] = useState(null);
   const [textInput, setTextInput] = useState("");
+  const [categories, setCategories] = useState("");
 
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch tasks whenever model changes
+  /* ------------------------------------------------------------ */
+  /* Fetch tasks when model changes                               */
+  /* ------------------------------------------------------------ */
   useEffect(() => {
     if (!model) return;
 
-    async function fetchTasks() {
-      setLoadingTasks(true);
-      setError(null);
+    setLoadingTasks(true);
+    setError(null);
 
-      try {
-        const data = await getAvailableTasks(model);
-
-        const tasks = data.tasks || [];
-        setAvailableTasks(tasks);
-
-        // Select first task by default
-        if (tasks.length > 0) {
-          setTask(tasks[0]);
-        } else {
-          setTask("");
-        }
-      } catch (err) {
-        console.error(err);
-        setError("Failed to load tasks from server");
-        setAvailableTasks([]);
+    getAvailableTasks(model)
+      .then((data) => {
+        const taskList = data.tasks || [];
+        setTasks(taskList);
+        setRequiredInputs(data.required_inputs || {});
+        setTask(taskList[0] || "");
+      })
+      .catch(() => {
+        setError("Failed to load tasks");
+        setTasks([]);
         setTask("");
-      } finally {
-        setLoadingTasks(false);
-      }
-    }
-
-    fetchTasks();
+      })
+      .finally(() => setLoadingTasks(false));
   }, [model]);
 
-  // Reset text input when task changes (important)
+  /* Reset dynamic inputs on task change */
   useEffect(() => {
     setTextInput("");
+    setCategories("");
   }, [task]);
 
-  const handleFileSelected = (file) => {
-    setSelectedFile(file);
-    setError(null);
-  };
-
+  /* ------------------------------------------------------------ */
+  /* Submit                                                       */
+  /* ------------------------------------------------------------ */
   const handleSubmit = async () => {
-    if (!selectedFile || !task || !model) {
-      setError("Please select a file, task, and model");
+    if (!file || !task) {
+      setError("File and task are required");
       return;
     }
+
+    const inputs = {};
+    const req = requiredInputs[task] || [];
+
+    if (req.includes("text_input")) inputs.text_input = textInput;
+    if (req.includes("categories")) inputs.categories = categories;
 
     setLoadingSubmit(true);
     setError(null);
 
     try {
-      const { jobId } = await submitJob(
-        selectedFile,
-        task,
-        model,
-        textInput || null
-      );
-
+      const { jobId } = await submitJob(file, task, model, inputs);
       navigate(`/annotate/${jobId}`);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to submit job. Check the input.");
+    } catch (e) {
+      setError(e.message || "Job submission failed");
     } finally {
       setLoadingSubmit(false);
     }
   };
 
+  /* ------------------------------------------------------------ */
+  /* UI                                                           */
+  /* ------------------------------------------------------------ */
   return (
     <div className="max-w-2xl mx-auto p-6 bg-white rounded shadow">
       <h2 className="text-2xl font-bold mb-6">Start New Annotation</h2>
 
-      {/* Model and Task selectors */}
-      <div className="flex flex-col md:flex-row gap-4 mb-4">
+      <div className="flex gap-4 mb-4">
         <select
           value={model}
           onChange={(e) => setModel(e.target.value)}
@@ -102,7 +94,7 @@ export default function Upload() {
         >
           {availableModels.map((m) => (
             <option key={m} value={m}>
-              {m.charAt(0).toUpperCase() + m.slice(1)}
+              {m.toUpperCase()}
             </option>
           ))}
         </select>
@@ -110,15 +102,12 @@ export default function Upload() {
         <select
           value={task}
           onChange={(e) => setTask(e.target.value)}
-          className="border p-2 rounded"
           disabled={loadingTasks}
+          className="border p-2 rounded flex-1"
         >
           {loadingTasks && <option>Loading tasks…</option>}
-          {!loadingTasks && availableTasks.length === 0 && (
-            <option>No tasks available</option>
-          )}
           {!loadingTasks &&
-            availableTasks.map((t) => (
+            tasks.map((t) => (
               <option key={t} value={t}>
                 {t.replace(/_/g, " ").toUpperCase()}
               </option>
@@ -126,33 +115,36 @@ export default function Upload() {
         </select>
       </div>
 
-      {/* Optional text input */}
-      <input
-        type="text"
-        value={textInput}
-        onChange={(e) => setTextInput(e.target.value)}
-        placeholder="Enter text input (optional)"
-        className="border p-2 rounded w-full mb-4"
-      />
+      {/* Dynamic inputs */}
+      {requiredInputs[task]?.includes("text_input") && (
+        <input
+          className="border p-2 w-full mb-3 rounded"
+          placeholder="Enter text input"
+          value={textInput}
+          onChange={(e) => setTextInput(e.target.value)}
+        />
+      )}
 
-      {/* File Upload */}
-      <UploadZone onFileSelected={handleFileSelected} />
+      {requiredInputs[task]?.includes("categories") && (
+        <input
+          className="border p-2 w-full mb-3 rounded"
+          placeholder="Categories (comma-separated)"
+          value={categories}
+          onChange={(e) => setCategories(e.target.value)}
+        />
+      )}
 
-      {/* Submit */}
+      <UploadZone onFileSelected={setFile} />
+
       <button
         onClick={handleSubmit}
-        disabled={loadingSubmit || !selectedFile}
-        className="px-4 py-2 bg-indigo-600 text-white rounded-md shadow hover:bg-indigo-500 disabled:bg-gray-400 mt-4"
+        disabled={loadingSubmit || !file}
+        className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded disabled:bg-gray-400"
       >
-        {loadingSubmit ? "Submitting..." : "Start Annotation"}
+        {loadingSubmit ? "Submitting…" : "Start Annotation"}
       </button>
 
-      {error && <p className="text-red-500 mt-2">{error}</p>}
-      {selectedFile && (
-        <p className="text-gray-700 mt-2">
-          Selected file: {selectedFile.name}
-        </p>
-      )}
+      {error && <p className="text-red-500 mt-3">{error}</p>}
     </div>
   );
 }
