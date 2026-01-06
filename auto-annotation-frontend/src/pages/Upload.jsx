@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import UploadZone from "../components/UploadZone";
-import { getAvailableTasks, submitJob } from "../services/api";
+import { submitJob } from "../services/api";
+import { getTasksForModel } from "../constants/tasks";
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -17,32 +18,23 @@ export default function Upload() {
   const [textInput, setTextInput] = useState("");
   const [categories, setCategories] = useState("");
 
-  const [loadingTasks, setLoadingTasks] = useState(false);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [error, setError] = useState(null);
 
   /* ------------------------------------------------------------ */
-  /* Fetch tasks when model changes                               */
+  /* STATIC task loading (NO backend call)                        */
   /* ------------------------------------------------------------ */
   useEffect(() => {
-    if (!model) return;
+    const taskMap = getTasksForModel(model);
+    const taskList = Object.keys(taskMap);
 
-    setLoadingTasks(true);
+    setTasks(taskList);
+    setRequiredInputs(taskMap);
+    setTask(taskList[0] || "");
+
+    setTextInput("");
+    setCategories("");
     setError(null);
-
-    getAvailableTasks(model)
-      .then((data) => {
-        const taskList = data.tasks || [];
-        setTasks(taskList);
-        setRequiredInputs(data.required_inputs || {});
-        setTask(taskList[0] || "");
-      })
-      .catch(() => {
-        setError("Failed to load tasks");
-        setTasks([]);
-        setTask("");
-      })
-      .finally(() => setLoadingTasks(false));
   }, [model]);
 
   /* Reset dynamic inputs on task change */
@@ -102,16 +94,13 @@ export default function Upload() {
         <select
           value={task}
           onChange={(e) => setTask(e.target.value)}
-          disabled={loadingTasks}
           className="border p-2 rounded flex-1"
         >
-          {loadingTasks && <option>Loading tasks…</option>}
-          {!loadingTasks &&
-            tasks.map((t) => (
-              <option key={t} value={t}>
-                {t.replace(/_/g, " ").toUpperCase()}
-              </option>
-            ))}
+          {tasks.map((t) => (
+            <option key={t} value={t}>
+              {t.replace(/_/g, " ").toUpperCase()}
+            </option>
+          ))}
         </select>
       </div>
 
