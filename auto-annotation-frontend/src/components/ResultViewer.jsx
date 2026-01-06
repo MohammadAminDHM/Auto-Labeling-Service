@@ -1,49 +1,115 @@
 // src/components/ResultViewer.jsx
 import React from "react";
-import BoundingBoxOverlay from "./BoundingBoxOverlay";
 import ResultJSON from "./ResultJSON";
 
-export default function ResultViewer({ result }) {
-  if (!result?.imageUrl) {
-    return <div className="text-gray-500">No visualization available</div>;
+/* ------------------------------------------------------------------ */
+/* Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function renderValue(value) {
+  if (value == null) return <em className="text-gray-400">null</em>;
+
+  if (typeof value === "string") {
+    return <span className="text-gray-800">{value}</span>;
   }
 
-  const { task, results } = result;
-  const hasBBoxes = results?.bboxes?.length > 0;
-  const hasPolygons = results?.polygons?.length > 0;
-  const hasText = results?.text;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return <span className="text-gray-800">{String(value)}</span>;
+  }
+
+  if (Array.isArray(value)) {
+    return (
+      <pre className="bg-white p-2 rounded border text-xs overflow-x-auto">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    );
+  }
+
+  if (typeof value === "object") {
+    return (
+      <pre className="bg-white p-2 rounded border text-xs overflow-x-auto">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    );
+  }
+
+  return String(value);
+}
+
+/* ------------------------------------------------------------------ */
+/* Component                                                          */
+/* ------------------------------------------------------------------ */
+
+export default function ResultViewer({ result }) {
+  if (!result) {
+    return <p className="text-gray-500">No result available</p>;
+  }
+
+  const {
+    imageUrl,
+    results,
+    task,
+    model,
+    ok,
+  } = result;
+
+  const hasResults =
+    results && typeof results === "object" && Object.keys(results).length > 0;
 
   return (
     <div className="space-y-6">
-      <div className="relative inline-block border rounded shadow-sm">
-        <img
-          src={result.imageUrl}
-          alt="Inference result"
-          className="max-w-full block"
-        />
-
-        {hasBBoxes && (
-          <BoundingBoxOverlay
-            bboxes={results.bboxes}
-            labels={results.labels}
-            scores={results.scores}
-          />
-        )}
-
-        {hasPolygons && (
-          <div className="absolute inset-0 pointer-events-none bg-red-500/20">
-            Polygons detected - Implement custom overlay
-          </div>
-        )}
-
-        {hasText && (
-          <div className="absolute bottom-0 left-0 bg-black/50 text-white p-2">
-            {hasText}
-          </div>
+      {/* Status */}
+      <div className="text-sm text-gray-600">
+        <strong>Model:</strong> {model ?? "unknown"} ·{" "}
+        <strong>Task:</strong> {task ?? "unknown"} ·{" "}
+        <strong>Status:</strong>{" "}
+        {ok ? (
+          <span className="text-green-600">OK</span>
+        ) : (
+          <span className="text-red-600">FAILED</span>
         )}
       </div>
 
-      <ResultJSON data={result} />
+      {/* Image */}
+      {imageUrl && (
+        <div className="border rounded shadow-sm inline-block bg-white">
+          <img
+            src={imageUrl}
+            alt="Inference result"
+            className="max-w-full block"
+          />
+        </div>
+      )}
+
+      {/* Structured Results */}
+      {hasResults && (
+        <div className="bg-gray-50 p-4 rounded border space-y-2">
+          <h4 className="font-semibold">
+            Task Results
+          </h4>
+
+          {Object.entries(results).map(([key, value]) => (
+            <div key={key}>
+              <div className="font-mono text-xs text-indigo-600 mb-1">
+                {key}
+              </div>
+              {renderValue(value)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Fallback */}
+      {!hasResults && (
+        <p className="text-gray-500 text-sm">
+          No structured results returned for this task.
+        </p>
+      )}
+
+      {/* Raw JSON (debug only) */}
+      <div className="pt-4">
+        <ResultJSON data={result.raw} />
+      </div>
     </div>
   );
 }
