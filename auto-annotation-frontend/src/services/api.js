@@ -23,65 +23,79 @@ function sleep(ms) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Normalizers (STRICT backend contract)                              */
+/* Normalizers (DEFENSIVE, REAL-WORLD SAFE)                            */
 /* ------------------------------------------------------------------ */
 
 /**
  * Submit response
- * Backend guarantees: { job_id }
+ * Expected: { job_id }
  */
 function normalizeSubmitResponse(data) {
   if (!data?.job_id) {
     console.error("[API] Invalid submit response:", data);
-    throw new Error("Invalid submit response");
+    throw new Error("Invalid submit response from backend");
   }
   return { jobId: data.job_id };
 }
 
 /**
  * Job metadata
+ * Accepts multiple backend shapes safely
  */
-function normalizeJob(job) {
-  if (!job?.id || !job?.status) {
-    console.error("[API] Invalid job payload:", job);
-    throw new Error("Invalid job payload");
+function normalizeJob(raw) {
+  if (!raw) {
+    throw new Error("Empty job payload");
+  }
+
+  const id = raw.id ?? raw.job_id;
+  const status = raw.status ?? raw.state;
+
+  if (!id || !status) {
+    console.error("[API] Unrecognized job payload:", raw);
+    throw new Error("Unrecognized job payload");
   }
 
   return {
-    id: job.id,
-    status: job.status, // queued | running | completed | failed
-    progress: job.progress ?? 0,
-    error: job.error ?? null,
-    hasResult: Boolean(job.has_result),
-    artifacts: job.artifacts ?? [],
+    id,
+    status, // queued | running | completed | failed
+    progress: raw.progress ?? 0,
+    error: raw.error ?? null,
+    hasResult:
+      raw.has_result ??
+      raw.status === "completed" ??
+      false,
+    artifacts: raw.artifacts ?? [],
+    raw,
   };
 }
 
 /**
  * Job result
- * Backend structure:
- * {
- *   job_id,
- *   task,
- *   model,
- *   annotations: { ok, results },
- *   artifacts: { overlay?: url }
- * }
+ * Supports Florence / RexOmni flexible outputs
  */
 function normalizeJobResult(payload) {
-  if (!payload?.annotations) {
-    console.error("[API] Invalid result payload:", payload);
-    throw new Error("Invalid result payload");
+  if (!payload) {
+    throw new Error("Empty result payload");
+  }
+
+  // Florence sometimes returns direct dict results
+  const annotations = payload.annotations ?? payload.results ?? payload;
+
+  let imageUrl = null;
+  if (annotations?.image_bytes) {
+    imageUrl = `data:image/png;base64,${annotations.image_bytes}`;
   }
 
   return {
-    jobId: payload.job_id,
-    task: payload.task,
-    model: payload.model,
-    ok: Boolean(payload.annotations.ok),
-    results: payload.annotations.results ?? {},
+    jobId: payload.job_id ?? payload.id,
+    task: payload.task ?? payload.task_type ?? null,
+    model: payload.model ?? null,
+    ok: annotations?.ok ?? true,
+    results: annotations?.results ?? annotations,
+    imageUrl,
+    maskBytes: annotations?.mask_bytes ?? null,
     artifacts: payload.artifacts ?? {},
-    raw: payload, // keep full backend payload
+    raw: payload,
   };
 }
 
@@ -89,30 +103,13 @@ function normalizeJobResult(payload) {
 /* API calls                                                          */
 /* ------------------------------------------------------------------ */
 
-/**
- * Fetch available tasks for model
- */
 export async function getAvailableTasks(model = "florence") {
-  try {
-    const res = await api.get("/api/jobs/tasks", {
-      params: { model: model.toLowerCase() },
-    });
-    return res.data; // { tasks: string[], required_inputs: object }
-  } catch (err) {
-    console.error("[API] getAvailableTasks:", err.response?.data || err.message);
-    throw err;
-  }
+  const res = await api.get("/api/jobs/tasks", {
+    params: { model: model.toLowerCase() },
+  });
+  return res.data;
 }
 
-/**
- * Submit job
- *
- * dynamicInputs example:
- * {
- *   text_input?: string
- *   categories?: string[] | string
- * }
- */
 export async function submitJob(file, task, model, dynamicInputs = {}) {
   if (!file || !task || !model) {
     throw new Error("file, task, and model are required");
@@ -123,62 +120,31 @@ export async function submitJob(file, task, model, dynamicInputs = {}) {
   formData.append("task", task);
   formData.append("model", model);
 
-  // text_input
   if (dynamicInputs.text_input) {
     formData.append("text_input", dynamicInputs.text_input);
   }
 
-  // categories (CSV string)
   if (dynamicInputs.categories) {
-    const csv =
-      Array.isArray(dynamicInputs.categories)
-        ? dynamicInputs.categories.join(",")
-        : dynamicInputs.categories;
+    const csv = Array.isArray(dynamicInputs.categories)
+      ? dynamicInputs.categories.join(",")
+      : dynamicInputs.categories;
     formData.append("categories", csv);
   }
 
-  try {
-    const res = await api.post("/api/jobs", formData);
-    return normalizeSubmitResponse(res.data);
-  } catch (err) {
-    console.error("[API] submitJob:", err.response?.data || err.message);
-    throw err;
-  }
+  const res = await api.post("/api/jobs", formData);
+  return normalizeSubmitResponse(res.data);
 }
 
-/**
- * Fetch job status
- */
 export async function getJob(jobId) {
-  if (!jobId) throw new Error("jobId is required");
-
-  try {
-    const res = await api.get(`/api/jobs/${jobId}`);
-    return normalizeJob(res.data);
-  } catch (err) {
-    console.error("[API] getJob:", err.response?.data || err.message);
-    throw err;
-  }
+  const res = await api.get(`/api/jobs/${jobId}`);
+  return normalizeJob(res.data);
 }
 
-/**
- * Fetch job result
- */
 export async function getJobResult(jobId) {
-  if (!jobId) throw new Error("jobId is required");
-
-  try {
-    const res = await api.get(`/api/jobs/${jobId}/result`);
-    return normalizeJobResult(res.data);
-  } catch (err) {
-    console.error("[API] getJobResult:", err.response?.data || err.message);
-    throw err;
-  }
+  const res = await api.get(`/api/jobs/${jobId}/result`);
+  return normalizeJobResult(res.data);
 }
 
-/**
- * Artifact URL (overlay, mask, etc.)
- */
 export function getArtifactUrl(jobId, name) {
   return `${BASE_URL}/api/jobs/${jobId}/artifacts/${name}`;
 }
@@ -187,9 +153,6 @@ export function getArtifactUrl(jobId, name) {
 /* Polling                                                            */
 /* ------------------------------------------------------------------ */
 
-/**
- * Poll job until completion
- */
 export async function waitForJob(
   jobId,
   { interval = 2000, timeout = 120000, onProgress } = {}
@@ -197,19 +160,32 @@ export async function waitForJob(
   const start = Date.now();
 
   while (true) {
-    const job = await getJob(jobId);
-    onProgress?.(job);
+    let job;
+
+    try {
+      job = await getJob(jobId);
+      onProgress?.(job);
+    } catch (err) {
+      console.warn("[API] Polling retry after job fetch error:", err.message);
+      await sleep(interval);
+      continue;
+    }
 
     if (job.status === "failed") {
       throw new Error(job.error || "Job failed");
     }
 
     if (job.status === "completed") {
-      if (!job.hasResult) {
-        throw new Error("Job completed but no result");
+      try {
+        const result = await getJobResult(jobId);
+        return { job, result };
+      } catch (err) {
+        console.error(
+          "[API] Job completed but result fetch failed:",
+          err
+        );
+        throw err;
       }
-      const result = await getJobResult(jobId);
-      return { job, result };
     }
 
     if (Date.now() - start > timeout) {
