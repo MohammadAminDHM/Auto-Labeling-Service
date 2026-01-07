@@ -1,55 +1,82 @@
 # app/services/job_runner.py
 import threading
 import traceback
-from .job_manager import create_job, save_result
+from pathlib import Path
 
-def submit_job(task: str, image_bytes: bytes, model: str | None, params: dict):
-    """
-    Creates a job and starts background execution in a thread.
-    """
-    job = create_job(task=task, model=model, params=params)
-    job["image_bytes"] = image_bytes
+from app.services.job_manager import create_job, save_result, mark_running, mark_failed
+from app.services.result_serializer import normalize_result
+from inference.registry.model_registry import ModelRegistry, TaskType, ModelType
+
+ARTIFACT_ROOT = Path("job_artifacts")
+
+
+def submit_job(task: str, model: str, image_bytes: bytes, params: dict):
+    job = create_job(task, model, params)
+
+    ARTIFACT_ROOT.mkdir(exist_ok=True)
+    job_dir = ARTIFACT_ROOT / job["id"]
+    job_dir.mkdir(exist_ok=True)
+    (job_dir / "original.png").write_bytes(image_bytes)
 
     thread = threading.Thread(
         target=run_job,
-        args=(job,),
+        args=(job["id"], image_bytes),
         daemon=True,
     )
     thread.start()
+
     return job
 
-def run_job(job):
-    print(f"[JobRunner] Running job {job['id']} task '{job['task']}' with model '{job['model']}'")
+
+def run_job(job_id: str, image_bytes: bytes):
+    from app.services.job_manager import get_job
+
+    job = get_job(job_id)
+    if not job:
+        return
+
     try:
-        # Simulate model prediction
-        task = job["task"].lower()
+        mark_running(job_id)
+        registry = ModelRegistry()
 
-        if task in ["detection", "object_detection", "open_vocab_detection", "open_vocabulary_detection"]:
-            result = {
-                "bboxes": [[10, 10, 100, 100]],  # mock example
-                "labels": ["example_label"],
-                "scores": [0.95],
-                "image_bytes": job.get("image_bytes")
-            }
-        elif task in ["region_segmentation", "region_to_segmentation"]:
-            result = {
-                "polygons": [[[10, 10], [50, 10], [50, 50], [10, 50]]],
-                "labels": ["example_segment"],
-                "bboxes": [[10, 10, 50, 50]],
-                "masks": {},  # optional
-                "image_bytes": job.get("image_bytes")
-            }
-        else:
-            result = {
-                "output": "task not implemented",
-                "image_bytes": job.get("image_bytes")
-            }
+        # Run the task
+        raw_result = registry.run(
+            task=TaskType(job["task"]),
+            model=ModelType(job["model"]),
+            image_bytes=image_bytes,
+            **job["params"],
+        )
 
-        save_result(job["id"], result)
-        print(f"[JobRunner] Job {job['id']} completed successfully")
+        job_dir = ARTIFACT_ROOT / job_id
+
+        overlay_bytes = raw_result.get("image_bytes")
+        mask_bytes = raw_result.get("mask_bytes")
+
+        # Save artifacts dynamically
+        artifacts = []
+        if overlay_bytes:
+            overlay_path = job_dir / "overlay.png"
+            overlay_path.write_bytes(overlay_bytes)
+            artifacts.append("overlay")
+        if mask_bytes:
+            mask_path = job_dir / "mask.png"
+            mask_path.write_bytes(mask_bytes)
+            artifacts.append("mask")
+
+        # Normalize results
+        normalized = normalize_result(
+            result=raw_result.get("results", {}),
+            task=job["task"],
+            model=job["model"],
+            image_bytes=overlay_bytes,
+            mask_bytes=mask_bytes,
+        )
+
+        # Include artifact names
+        normalized["artifacts"] = artifacts
+
+        save_result(job_id, normalized)
 
     except Exception as e:
-        job["status"] = "failed"
-        job["error"] = str(e)
-        job["traceback"] = traceback.format_exc()
-        print(f"[JobRunner] Job {job['id']} failed: {e}")
+        mark_failed(job_id, str(e))
+        traceback.print_exc()

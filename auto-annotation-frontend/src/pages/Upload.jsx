@@ -1,112 +1,139 @@
-// src/pages/Upload.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import UploadZone from "../components/UploadZone";
-import ProgressBar from "../components/ProgressBar";
-import { submitJob, waitForJob } from "../services/api";
+import { submitJob } from "../services/api";
+import { getTasksForModel } from "../constants/tasks";
 
 export default function Upload() {
-  const [task, setTask] = useState("detection");
-  const [model, setModel] = useState("rexomni");
-  const [job, setJob] = useState(null);
-  const [result, setResult] = useState(null);
-  const [progress, setProgress] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const [model, setModel] = useState("florence");
+  const [availableModels] = useState(["florence", "rexomni"]);
+
+  const [tasks, setTasks] = useState([]);
+  const [requiredInputs, setRequiredInputs] = useState({});
+  const [task, setTask] = useState("");
+
+  const [file, setFile] = useState(null);
+  const [textInput, setTextInput] = useState("");
+  const [categories, setCategories] = useState("");
+
+  const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleFile = (file) => {
-    setJob(null);
-    setResult(null);
-    setProgress(0);
+  /* ------------------------------------------------------------ */
+  /* STATIC task loading (NO backend call)                        */
+  /* ------------------------------------------------------------ */
+  useEffect(() => {
+    const taskMap = getTasksForModel(model);
+    const taskList = Object.keys(taskMap);
+
+    setTasks(taskList);
+    setRequiredInputs(taskMap);
+    setTask(taskList[0] || "");
+
+    setTextInput("");
+    setCategories("");
+    setError(null);
+  }, [model]);
+
+  /* Reset dynamic inputs on task change */
+  useEffect(() => {
+    setTextInput("");
+    setCategories("");
+  }, [task]);
+
+  /* ------------------------------------------------------------ */
+  /* Submit                                                       */
+  /* ------------------------------------------------------------ */
+  const handleSubmit = async () => {
+    if (!file || !task) {
+      setError("File and task are required");
+      return;
+    }
+
+    const inputs = {};
+    const req = requiredInputs[task] || [];
+
+    if (req.includes("text_input")) inputs.text_input = textInput;
+    if (req.includes("categories")) inputs.categories = categories;
+
+    setLoadingSubmit(true);
     setError(null);
 
-    if (!file) return;
-    startJob(file);
-  };
-
-  const startJob = async (file) => {
-    setLoading(true);
     try {
-      const jobData = await submitJob(file, task, model);
-      setJob(jobData);
-
-      // Polling for result
-      const completedJob = await waitForJob(jobData.id, 2000, 120000);
-      setResult(completedJob.result);
-      setProgress(100);
-    } catch (err) {
-      console.error("Job failed:", err);
-      setError("Job failed or timed out");
+      const { jobId } = await submitJob(file, task, model, inputs);
+      navigate(`/annotate/${jobId}`);
+    } catch (e) {
+      setError(e.message || "Job submission failed");
     } finally {
-      setLoading(false);
+      setLoadingSubmit(false);
     }
   };
 
-  const renderBBoxes = () => {
-    if (!result?.results) return null;
-
-    const taskKey = Object.keys(result.results)[0];
-    const innerKey = Object.keys(result.results[taskKey])[0];
-    const data = result.results[taskKey][innerKey];
-
-    if (!data?.bboxes) return null;
-
-    return data.bboxes.map((box, idx) => {
-      const [x1, y1, x2, y2] = box;
-      const label = data.labels?.[idx] ?? "";
-      const score = data.scores?.[idx] ?? 0;
-      return (
-        <div
-          key={idx}
-          className="absolute border-2 border-red-500 text-red-500 text-xs font-bold px-1"
-          style={{
-            top: y1,
-            left: x1,
-            width: x2 - x1,
-            height: y2 - y1,
-          }}
-        >
-          {label} ({(score * 100).toFixed(0)}%)
-        </div>
-      );
-    });
-  };
-
+  /* ------------------------------------------------------------ */
+  /* UI                                                           */
+  /* ------------------------------------------------------------ */
   return (
-    <div className="max-w-3xl mx-auto p-4">
-      <h2 className="text-2xl font-semibold mb-4">Upload & Start Annotation</h2>
+    <div className="max-w-2xl mx-auto p-6 bg-white rounded shadow">
+      <h2 className="text-2xl font-bold mb-6">Start New Annotation</h2>
 
-      {/* Task / Model selection */}
       <div className="flex gap-4 mb-4">
-        <select value={task} onChange={(e) => setTask(e.target.value)} className="border p-2 rounded">
-          <option value="detection">Detection</option>
-          <option value="open_vocab_detection">Open Vocabulary Detection</option>
-          <option value="region_segmentation">Segmentation</option>
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="border p-2 rounded"
+        >
+          {availableModels.map((m) => (
+            <option key={m} value={m}>
+              {m.toUpperCase()}
+            </option>
+          ))}
         </select>
 
-        <select value={model} onChange={(e) => setModel(e.target.value)} className="border p-2 rounded">
-          <option value="rexomni">RexOmni</option>
-          <option value="default-model">Default Model</option>
+        <select
+          value={task}
+          onChange={(e) => setTask(e.target.value)}
+          className="border p-2 rounded flex-1"
+        >
+          {tasks.map((t) => (
+            <option key={t} value={t}>
+              {t.replace(/_/g, " ").toUpperCase()}
+            </option>
+          ))}
         </select>
       </div>
 
-      <UploadZone task={task} model={model} onJobSubmitted={handleFile} />
-
-      {loading && <div className="mt-2 text-gray-600">Uploading / processing...</div>}
-
-      {job && (
-        <div className="bg-white p-4 rounded shadow mt-4 relative">
-          {result?.image_url && (
-            <div className="relative inline-block">
-              <img src={result.image_url} alt="Result" className="max-w-full border rounded" />
-              {task.includes("detection") && renderBBoxes()}
-            </div>
-          )}
-
-          <ProgressBar value={progress} />
-        </div>
+      {/* Dynamic inputs */}
+      {requiredInputs[task]?.includes("text_input") && (
+        <input
+          className="border p-2 w-full mb-3 rounded"
+          placeholder="Enter text input"
+          value={textInput}
+          onChange={(e) => setTextInput(e.target.value)}
+        />
       )}
 
-      {error && <div className="text-red-500 mt-2">{error}</div>}
+      {requiredInputs[task]?.includes("categories") && (
+        <input
+          className="border p-2 w-full mb-3 rounded"
+          placeholder="Categories (comma-separated)"
+          value={categories}
+          onChange={(e) => setCategories(e.target.value)}
+        />
+      )}
+
+      <UploadZone onFileSelected={setFile} />
+
+      <button
+        onClick={handleSubmit}
+        disabled={loadingSubmit || !file}
+        className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded disabled:bg-gray-400"
+      >
+        {loadingSubmit ? "Submitting…" : "Start Annotation"}
+      </button>
+
+      {error && <p className="text-red-500 mt-3">{error}</p>}
     </div>
   );
 }

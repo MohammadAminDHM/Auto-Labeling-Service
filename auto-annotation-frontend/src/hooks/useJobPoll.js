@@ -1,38 +1,66 @@
 // src/hooks/useJobPoll.js
 import { useEffect, useRef, useState } from "react";
-import { getJob } from "../services/api";
+import { waitForJob } from "../services/api";
 
-export default function useJobPoll(jobId, { interval = 1000 } = {}) {
-  const [state, setState] = useState({ status: "queued", progress: 0, result: null });
-  const timer = useRef(null);
+export default function useJobPoll(jobId, options = {}) {
+  const [job, setJob] = useState(null);
+  const [result, setResult] = useState(null);
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState(null);
+
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     if (!jobId) return;
-    let mounted = true;
 
-    async function tick() {
+    cancelledRef.current = false;
+    setStatus("running");
+    setError(null);
+    setJob(null);
+    setResult(null);
+
+    (async () => {
       try {
-        const data = await getJob(jobId);
-        if (!mounted) return;
-        setState(data);
-        if (data.status === "done" || data.status === "error") {
-          clearInterval(timer.current);
-        }
-      } catch (err) {
-        // If backend not available, keep polling but stop on repeated failures (not implemented)
-        console.error("poll error", err);
-      }
-    }
+        const { job, result } = await waitForJob(jobId, {
+          ...options,
+          onProgress: (meta) => {
+            if (!cancelledRef.current) {
+              setJob(meta);
+            }
+          },
+        });
 
-    // initial
-    tick();
-    timer.current = setInterval(tick, interval);
+        if (cancelledRef.current) return;
+
+        setJob(job);
+        setResult(result);
+        setStatus("completed");
+      } catch (err) {
+        if (cancelledRef.current) return;
+
+        console.error("[useJobPoll] Polling failed:", err);
+
+        setError(
+          err?.response?.data?.detail ||
+          err?.message ||
+          "Network error while polling job"
+        );
+        setStatus("failed");
+      }
+    })();
 
     return () => {
-      mounted = false;
-      clearInterval(timer.current);
+      cancelledRef.current = true;
     };
-  }, [jobId, interval]);
+  }, [jobId]);
 
-  return state;
+  return {
+    job,
+    result,
+    status,
+    error,
+    isRunning: status === "running",
+    isCompleted: status === "completed",
+    isFailed: status === "failed",
+  };
 }

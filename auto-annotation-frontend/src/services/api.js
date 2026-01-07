@@ -1,66 +1,199 @@
 // src/services/api.js
 import axios from "axios";
 
-const BASE = import.meta.env.VITE_API_BASE || "http://localhost:6996";
+/* ------------------------------------------------------------------ */
+/* Axios instance                                                     */
+/* ------------------------------------------------------------------ */
+
+const BASE_URL =
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ||
+  "http://localhost:6996";
 
 const api = axios.create({
-  baseURL: BASE,
+  baseURL: BASE_URL,
   timeout: 120000,
 });
 
+/* ------------------------------------------------------------------ */
+/* Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/* ------------------------------------------------------------------ */
+/* Normalizers (DEFENSIVE, REAL-WORLD SAFE)                            */
+/* ------------------------------------------------------------------ */
+
 /**
- * Submit a job to backend
- * @param {File} file - uploaded file
- * @param {string} task - task name (detection, segmentation, etc.)
- * @param {string} model - model name
- * @param {object} params - optional parameters
+ * Submit response
+ * Expected: { job_id }
  */
-export async function submitJob(file, task, model, params = {}) {
+function normalizeSubmitResponse(data) {
+  if (!data?.job_id) {
+    console.error("[API] Invalid submit response:", data);
+    throw new Error("Invalid submit response from backend");
+  }
+  return { jobId: data.job_id };
+}
+
+/**
+ * Job metadata
+ * Accepts multiple backend shapes safely
+ */
+function normalizeJob(raw) {
+  if (!raw) {
+    throw new Error("Empty job payload");
+  }
+
+  const id = raw.id ?? raw.job_id;
+  const status = raw.status ?? raw.state;
+
+  if (!id || !status) {
+    console.error("[API] Unrecognized job payload:", raw);
+    throw new Error("Unrecognized job payload");
+  }
+
+  return {
+    id,
+    status, // queued | running | completed | failed
+    progress: raw.progress ?? 0,
+    error: raw.error ?? null,
+    hasResult:
+      raw.has_result ??
+      raw.status === "completed" ??
+      false,
+    artifacts: raw.artifacts ?? [],
+    raw,
+  };
+}
+
+/**
+ * Job result
+ * Supports Florence / RexOmni flexible outputs
+ */
+function normalizeJobResult(payload) {
+  if (!payload) {
+    throw new Error("Empty result payload");
+  }
+
+  // Florence sometimes returns direct dict results
+  const annotations = payload.annotations ?? payload.results ?? payload;
+
+  let imageUrl = null;
+  if (annotations?.image_bytes) {
+    imageUrl = `data:image/png;base64,${annotations.image_bytes}`;
+  }
+
+  return {
+    jobId: payload.job_id ?? payload.id,
+    task: payload.task ?? payload.task_type ?? null,
+    model: payload.model ?? null,
+    ok: annotations?.ok ?? true,
+    results: annotations?.results ?? annotations,
+    imageUrl,
+    maskBytes: annotations?.mask_bytes ?? null,
+    artifacts: payload.artifacts ?? {},
+    raw: payload,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* API calls                                                          */
+/* ------------------------------------------------------------------ */
+
+export async function getAvailableTasks(model = "florence") {
+  const res = await api.get("/api/jobs/tasks", {
+    params: { model: model.toLowerCase() },
+  });
+  return res.data;
+}
+
+export async function submitJob(file, task, model, dynamicInputs = {}) {
+  if (!file || !task || !model) {
+    throw new Error("file, task, and model are required");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
   formData.append("task", task);
   formData.append("model", model);
-  formData.append("params", JSON.stringify(params));
 
-  const res = await api.post("/api/jobs", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-  return res.data; // returns job info including job id
-}
-
-/**
- * Fetch job result by ID
- * @param {string} jobId
- */
-export async function getJobResult(jobId) {
-  const res = await api.get(`/api/jobs/${jobId}`);
-  const data = res.data;
-
-  // Decode image_bytes if exists
-  if (data?.result?.image_bytes) {
-    data.result.image_url = `data:image/png;base64,${data.result.image_bytes}`;
+  if (dynamicInputs.text_input) {
+    formData.append("text_input", dynamicInputs.text_input);
   }
-  return data;
+
+  if (dynamicInputs.categories) {
+    const csv = Array.isArray(dynamicInputs.categories)
+      ? dynamicInputs.categories.join(",")
+      : dynamicInputs.categories;
+    formData.append("categories", csv);
+  }
+
+  const res = await api.post("/api/jobs", formData);
+  return normalizeSubmitResponse(res.data);
 }
 
-// Polling helper
-export async function waitForJob(jobId, interval = 2000, timeout = 120000) {
+export async function getJob(jobId) {
+  const res = await api.get(`/api/jobs/${jobId}`);
+  return normalizeJob(res.data);
+}
+
+export async function getJobResult(jobId) {
+  const res = await api.get(`/api/jobs/${jobId}/result`);
+  return normalizeJobResult(res.data);
+}
+
+export function getArtifactUrl(jobId, name) {
+  return `${BASE_URL}/api/jobs/${jobId}/artifacts/${name}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Polling                                                            */
+/* ------------------------------------------------------------------ */
+
+export async function waitForJob(
+  jobId,
+  { interval = 2000, timeout = 120000, onProgress } = {}
+) {
   const start = Date.now();
-  return new Promise((resolve, reject) => {
-    const check = async () => {
-      const job = await getJobResult(jobId);
-      if (job.status === "completed") return resolve(job);
-      if (job.status === "failed") return reject(job);
-      if (Date.now() - start > timeout) return reject({ status: "timeout" });
-      setTimeout(check, interval);
-    };
-    check();
-  });
-}
 
-// Health check
-export async function ping() {
-  return api.get("/health").then(r => r.data).catch(() => null);
+  while (true) {
+    let job;
+
+    try {
+      job = await getJob(jobId);
+      onProgress?.(job);
+    } catch (err) {
+      console.warn("[API] Polling retry after job fetch error:", err.message);
+      await sleep(interval);
+      continue;
+    }
+
+    if (job.status === "failed") {
+      throw new Error(job.error || "Job failed");
+    }
+
+    if (job.status === "completed") {
+      try {
+        const result = await getJobResult(jobId);
+        return { job, result };
+      } catch (err) {
+        console.error(
+          "[API] Job completed but result fetch failed:",
+          err
+        );
+        throw err;
+      }
+    }
+
+    if (Date.now() - start > timeout) {
+      throw new Error("Polling timeout");
+    }
+
+    await sleep(interval);
+  }
 }
 
 export default api;

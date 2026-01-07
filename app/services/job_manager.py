@@ -1,12 +1,12 @@
 # app/services/job_manager.py
 import uuid
-from typing import Optional
-from .job_result_store import save_job_result, get_job_result_data
 
 job_store: dict[str, dict] = {}
 
-def create_job(task: str, model: Optional[str], params: dict):
+
+def create_job(task: str, model: str, params: dict):
     job_id = str(uuid.uuid4())
+
     job_store[job_id] = {
         "id": job_id,
         "task": task,
@@ -16,24 +16,27 @@ def create_job(task: str, model: Optional[str], params: dict):
         "progress": 0,
         "result": None,
         "error": None,
-        "image_bytes": None,
-        "traceback": None,
     }
-    print(f"[JobManager] Created job {job_id} for task '{task}' with model '{model}'")
+
     return job_store[job_id]
 
+
 def get_job(job_id: str):
-    job = job_store.get(job_id)
-    if job:
-        print(f"[JobManager] Retrieved job {job_id} status: {job['status']}")
-    else:
-        print(f"[JobManager] Job {job_id} not found")
-    return job
+    return job_store.get(job_id)
+
+
+def mark_running(job_id: str):
+    job_store[job_id]["status"] = "running"
+    job_store[job_id]["progress"] = 20
+
 
 def save_result(job_id: str, result: dict):
-    job = get_job(job_id)
-    if job:
-        job["result"] = result
-        job["status"] = "completed"
-        save_job_result(job_id, result)
-        print(f"[JobManager] Saved result for job {job_id}")
+    job_store[job_id]["result"] = result
+    job_store[job_id]["status"] = "completed"
+    job_store[job_id]["progress"] = 100
+    job_store[job_id]["artifacts"] = result.get("artifacts", [])
+
+
+def mark_failed(job_id: str, error: str):
+    job_store[job_id]["status"] = "failed"
+    job_store[job_id]["error"] = error

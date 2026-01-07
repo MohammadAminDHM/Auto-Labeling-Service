@@ -37,10 +37,10 @@ class ModelRegistry:
         self.default_model = {
             TaskType.DETECTION: ModelType.FLORENCE,
             TaskType.OPEN_VOCAB_DETECTION: ModelType.FLORENCE,
-            TaskType.OCR: ModelType.REXOMNI,
+            TaskType.OCR: ModelType.FLORENCE,  # Changed to Florence
             TaskType.OCR_WITH_REGION: ModelType.FLORENCE,
-            TaskType.VISUAL_PROMPTING: ModelType.REXOMNI,
-            TaskType.KEYPOINT: ModelType.REXOMNI,
+            TaskType.VISUAL_PROMPTING: ModelType.FLORENCE,  # Fallback
+            TaskType.KEYPOINT: ModelType.FLORENCE,  # Fallback
             TaskType.CAPTION: ModelType.FLORENCE,
             TaskType.CAPTION_DETAILED: ModelType.FLORENCE,
             TaskType.CAPTION_MORE_DETAILED: ModelType.FLORENCE,
@@ -66,6 +66,7 @@ class ModelRegistry:
         if task not in adapter.supported_tasks():
             raise ValueError(f"{model} does not support task {task}")
 
+        print(f"[Registry] Running task {task} with model {model} and kwargs {kwargs}")  # Added enhanced log
         return adapter.run(task, image_bytes, **kwargs)
 
     def get_task_config(self, task: TaskType):
